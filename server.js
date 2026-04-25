@@ -138,6 +138,13 @@ function getStudents(program, sesi) {
   `).all(program, sesi);
 }
 
+function getExportCardPath(student, side) {
+  const cohortSlug = getCohortSlug(student.program, student.sesi);
+  const cohortExportDir = path.join(EXPORTS_DIR, cohortSlug);
+  const filename = side === 'front' ? student.front_filename : student.back_filename;
+  return resolveInside(cohortExportDir, filename);
+}
+
 function safeCompare(left, right) {
   const leftBuffer = Buffer.from(String(left));
   const rightBuffer = Buffer.from(String(right));
@@ -246,6 +253,35 @@ app.delete('/api/exports/records/:icNumber', (req, res) => {
     deleted: true,
     icNumber,
   });
+});
+
+app.get('/api/exports/records/:icNumber/:side', (req, res) => {
+  const icNumber = String(req.params.icNumber || '').trim();
+  const side = String(req.params.side || '').trim();
+
+  if (!VALID_IC_PATTERN.test(icNumber)) {
+    res.status(400).json({ error: 'Invalid IC number format.' });
+    return;
+  }
+
+  if (side !== 'front' && side !== 'back') {
+    res.status(400).json({ error: 'Side must be front or back.' });
+    return;
+  }
+
+  const student = getStudent(icNumber);
+  if (!student) {
+    res.status(404).json({ error: 'Student not found.' });
+    return;
+  }
+
+  const cardPath = getExportCardPath(student, side);
+  if (!cardPath || !fs.existsSync(cardPath)) {
+    res.status(404).json({ error: 'Card image not found.' });
+    return;
+  }
+
+  res.sendFile(cardPath);
 });
 
 app.get('/api/students/:icNumber', (req, res) => {

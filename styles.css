@@ -112,6 +112,15 @@ input {
   stroke-width: 2.3;
 }
 
+.brand-icon {
+  width: 30px;
+  height: 30px;
+  flex: 0 0 auto;
+  border-radius: 999px;
+  object-fit: cover;
+  box-shadow: 0 6px 14px rgba(15, 142, 163, 0.2);
+}
+
 .eyebrow span {
   background: linear-gradient(135deg, #0f8ea3 0%, #296fb0 58%, #123b67 100%);
   -webkit-background-clip: text;
@@ -623,6 +632,35 @@ h1 {
   font-weight: 700;
 }
 
+.record-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.row-icon-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border: 1px solid rgba(15, 142, 163, 0.2);
+  border-radius: 8px;
+  color: #0d5665;
+  background: rgba(240, 248, 250, 0.94);
+  cursor: pointer;
+}
+
+.row-icon-button:hover {
+  background: rgba(226, 244, 248, 0.98);
+}
+
+.row-icon-button svg {
+  width: 16px;
+  height: 16px;
+  stroke-width: 2.4;
+}
+
 .row-delete-button:hover:not(:disabled) {
   background: rgba(255, 228, 224, 0.98);
 }
@@ -640,6 +678,62 @@ h1 {
 
 .row-delete-button.loading svg {
   animation: spin 700ms linear infinite;
+}
+
+.modal-open {
+  overflow: hidden;
+}
+
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  display: grid;
+  place-items: center;
+  padding: 18px;
+  background: rgba(15, 23, 42, 0.56);
+}
+
+.modal-dialog {
+  width: min(680px, 100%);
+  max-height: min(92vh, 980px);
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: #fff;
+  box-shadow: 0 24px 70px rgba(15, 23, 42, 0.28);
+}
+
+.modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--line);
+}
+
+.modal-header h2 {
+  margin: 0;
+  font-size: 18px;
+  line-height: 1.2;
+}
+
+.modal-body {
+  max-height: calc(92vh - 68px);
+  overflow: auto;
+  padding: 14px;
+  background: #f6f9fb;
+}
+
+.modal-body img {
+  display: block;
+  width: min(100%, 520px);
+  height: auto;
+  margin: 0 auto;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #fff;
 }
 
 .record-check {
@@ -701,6 +795,11 @@ h1 {
   .eyebrow svg {
     width: 24px;
     height: 24px;
+  }
+
+  .brand-icon {
+    width: 26px;
+    height: 26px;
   }
 
   .download-actions {

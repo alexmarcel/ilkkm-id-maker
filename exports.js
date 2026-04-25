@@ -7,6 +7,10 @@ const elements = {
   count: document.querySelector('#exportCount'),
   recordsTableBody: document.querySelector('#recordsTableBody'),
   downloadZip: document.querySelector('#downloadZip'),
+  cardModal: document.querySelector('#cardModal'),
+  cardModalTitle: document.querySelector('#cardModalTitle'),
+  cardModalImage: document.querySelector('#cardModalImage'),
+  closeCardModal: document.querySelector('#closeCardModal'),
 };
 
 let countTimer = null;
@@ -74,18 +78,38 @@ function renderRecords(records) {
     const matrixCell = document.createElement('td');
     const icCell = document.createElement('td');
     const actionCell = document.createElement('td');
+    const frontButton = document.createElement('button');
+    const backButton = document.createElement('button');
     const deleteButton = document.createElement('button');
 
     numberCell.textContent = record.number;
     nameCell.textContent = record.name;
     matrixCell.textContent = record.matrixNumber;
     icCell.textContent = record.icNumber;
+    actionCell.className = 'record-actions';
+
+    frontButton.className = 'row-icon-button';
+    frontButton.type = 'button';
+    frontButton.dataset.icNumber = record.icNumber;
+    frontButton.dataset.name = record.name;
+    frontButton.dataset.side = 'front';
+    frontButton.setAttribute('aria-label', `Preview front card for ${record.name}`);
+    frontButton.innerHTML = '<i data-lucide="file-input" aria-hidden="true"></i>';
+
+    backButton.className = 'row-icon-button';
+    backButton.type = 'button';
+    backButton.dataset.icNumber = record.icNumber;
+    backButton.dataset.name = record.name;
+    backButton.dataset.side = 'back';
+    backButton.setAttribute('aria-label', `Preview back card for ${record.name}`);
+    backButton.innerHTML = '<i data-lucide="file-output" aria-hidden="true"></i>';
+
     deleteButton.className = 'row-delete-button';
     deleteButton.type = 'button';
     deleteButton.dataset.icNumber = record.icNumber;
     deleteButton.dataset.name = record.name;
     deleteButton.innerHTML = '<i data-lucide="trash-2" aria-hidden="true"></i>';
-    actionCell.append(deleteButton);
+    actionCell.append(frontButton, backButton, deleteButton);
 
     row.append(numberCell, nameCell, matrixCell, icCell, actionCell);
     elements.recordsTableBody.append(row);
@@ -147,6 +171,28 @@ function downloadZip() {
   }, 900);
 }
 
+function openCardModal(button) {
+  const icNumber = button.dataset.icNumber;
+  const side = button.dataset.side;
+  const name = button.dataset.name;
+
+  elements.cardModalTitle.textContent = `${side === 'front' ? 'Front' : 'Back'} Card - ${name}`;
+  elements.cardModalImage.alt = `${side === 'front' ? 'Front' : 'Back'} card for ${name}`;
+  elements.cardModalImage.src = `/api/exports/records/${encodeURIComponent(icNumber)}/${side}?v=${Date.now()}`;
+  elements.cardModal.hidden = false;
+  document.body.classList.add('modal-open');
+
+  if (window.lucide) {
+    window.lucide.createIcons();
+  }
+}
+
+function closeCardModal() {
+  elements.cardModal.hidden = true;
+  elements.cardModalImage.removeAttribute('src');
+  document.body.classList.remove('modal-open');
+}
+
 async function deleteRecord(button) {
   const icNumber = button.dataset.icNumber;
   const name = button.dataset.name;
@@ -187,9 +233,26 @@ elements.program.addEventListener('input', scheduleCountRefresh);
 elements.sesi.addEventListener('input', scheduleCountRefresh);
 elements.downloadZip.addEventListener('click', downloadZip);
 elements.recordsTableBody.addEventListener('click', (event) => {
+  const previewButton = event.target.closest('.row-icon-button');
+  if (previewButton) {
+    openCardModal(previewButton);
+    return;
+  }
+
   const button = event.target.closest('.row-delete-button');
   if (button) {
     deleteRecord(button);
+  }
+});
+elements.closeCardModal.addEventListener('click', closeCardModal);
+elements.cardModal.addEventListener('click', (event) => {
+  if (event.target === elements.cardModal) {
+    closeCardModal();
+  }
+});
+document.addEventListener('keydown', (event) => {
+  if (event.key === 'Escape' && !elements.cardModal.hidden) {
+    closeCardModal();
   }
 });
 

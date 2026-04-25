@@ -267,6 +267,18 @@ function updateFieldAvailability() {
   elements.uploadButton.tabIndex = enabled ? 0 : -1;
 }
 
+function clearStudentFields() {
+  state.uploadedPhoto = null;
+  state.uploadedPhotoFile = null;
+  elements.photoInput.value = '';
+  elements.nameInput.value = '';
+  elements.matrixInput.value = '';
+  elements.photoButtonText.textContent = 'Upload Photo';
+  setPhotoStatus('');
+  markDirty();
+  renderNow();
+}
+
 function updateStatus() {
   const data = getFormData();
   updateFieldAvailability();
@@ -817,6 +829,7 @@ async function lookupStudentByIc() {
     });
 
     if (response.status === 404) {
+      clearStudentFields();
       setSaveStatus('No saved record found. Fill details and save.');
       return;
     }
@@ -828,13 +841,23 @@ async function lookupStudentByIc() {
     const student = await response.json();
     elements.nameInput.value = student.name || '';
     elements.matrixInput.value = student.matrixNumber || '';
+    state.uploadedPhoto = null;
+    state.uploadedPhotoFile = null;
+    elements.photoInput.value = '';
+    elements.photoButtonText.textContent = 'Upload Photo';
+    setPhotoStatus('');
 
     if (student.photoUrl) {
       const cacheBust = `v=${encodeURIComponent(student.updatedAt || Date.now())}`;
-      state.uploadedPhoto = await loadImage(`${student.photoUrl}?${cacheBust}`);
-      state.uploadedPhotoFile = null;
-      elements.photoButtonText.textContent = `${student.icNumber.replace(/-/g, '')}_photo`;
-      setPhotoStatus('Saved photo loaded.', 'ready');
+      try {
+        state.uploadedPhoto = await loadImage(`${student.photoUrl}?${cacheBust}`);
+        state.uploadedPhotoFile = null;
+        elements.photoButtonText.textContent = `${student.icNumber.replace(/-/g, '')}_photo`;
+        setPhotoStatus('Saved photo loaded.', 'ready');
+      } catch (error) {
+        state.uploadedPhoto = null;
+        setPhotoStatus('');
+      }
     }
 
     setSaveStatus('Saved record loaded.', 'ready');

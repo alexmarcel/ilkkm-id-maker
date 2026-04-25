@@ -59,6 +59,20 @@
           </div>
         </form>
       </section>
+
+      <div class="modal-overlay" id="cardModal" hidden>
+        <div class="modal-dialog" role="dialog" aria-modal="true" aria-labelledby="cardModalTitle">
+          <div class="modal-header">
+            <h2 id="cardModalTitle">Card Preview</h2>
+            <button class="icon-button" id="closeCardModal" type="button" aria-label="Close preview">
+              <i data-lucide="x" aria-hidden="true"></i>
+            </button>
+          </div>
+          <div class="modal-body">
+            <img id="cardModalImage" alt="">
+          </div>
+        </div>
+      </div>
     </main>
 
     <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
