@@ -84,7 +84,7 @@ function renderRecords(records) {
     deleteButton.type = 'button';
     deleteButton.dataset.icNumber = record.icNumber;
     deleteButton.dataset.name = record.name;
-    deleteButton.innerHTML = '<i data-lucide="trash-2" aria-hidden="true"></i><span></span>';
+    deleteButton.innerHTML = '<i data-lucide="trash-2" aria-hidden="true"></i>';
     actionCell.append(deleteButton);
 
     row.append(numberCell, nameCell, matrixCell, icCell, actionCell);
