@@ -56,7 +56,23 @@ Change them with `EXPORTS_USERNAME` and `EXPORTS_PASSWORD`.
 
 ## Docker
 
-Build and run with Docker Compose:
+For the VPS Traefik stack, add the `ilkkm-id-maker` service from `docker-compose.yml` to your existing compose file.
+
+It is configured for:
+
+- GitHub build context: `https://github.com/alexmarcel/ilkkm-id-maker.git#main`
+- Traefik host: `id.alexmarcel.com`
+- Internal app port: `3000`
+- Persistent volume mounted at `/data`
+
+Set these environment variables before deploying:
+
+```bash
+ID_MAKER_EXPORTS_USERNAME=admin
+ID_MAKER_EXPORTS_PASSWORD=your-secure-password
+```
+
+If running this repo by itself, build and run with Docker Compose:
 
 ```bash
 docker compose up --build

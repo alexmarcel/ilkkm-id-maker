@@ -1,12 +1,30 @@
 services:
   ilkkm-id-maker:
-    build: .
-    ports:
-      - "3000:3000"
-    environment:
-      DATA_DIR: /data
-      EXPORTS_USERNAME: admin
-      EXPORTS_PASSWORD: ilkkm2026
-    volumes:
-      - ./data:/data
+    build:
+      context: https://github.com/alexmarcel/ilkkm-id-maker.git#main
+      dockerfile: Dockerfile
+    container_name: ilkkm-id-maker
     restart: unless-stopped
+    environment:
+      - NODE_ENV=production
+      - DATA_DIR=/data
+      - EXPORTS_USERNAME=${ID_MAKER_EXPORTS_USERNAME:-admin}
+      - EXPORTS_PASSWORD=${ID_MAKER_EXPORTS_PASSWORD:-change-this-password}
+    volumes:
+      - ilkkm_id_maker_data:/data
+    networks:
+      - web
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.ilkkm-id-maker.rule=Host(`id.alexmarcel.com`)"
+      - "traefik.http.routers.ilkkm-id-maker.entrypoints=websecure"
+      - "traefik.http.routers.ilkkm-id-maker.tls.certresolver=myresolver"
+      - "traefik.http.services.ilkkm-id-maker.loadbalancer.server.port=3000"
+      - "traefik.http.services.ilkkm-id-maker.loadbalancer.server.scheme=http"
+
+networks:
+  web:
+    external: true
+
+volumes:
+  ilkkm_id_maker_data:
