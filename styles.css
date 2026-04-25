@@ -746,7 +746,7 @@ h1 {
   z-index: 30;
   display: grid;
   place-items: center;
-  background: rgba(31, 41, 55, 0.42);
+  background: rgba(31, 41, 55, 0.62);
 }
 
 .saving-overlay[hidden] {
