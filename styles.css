@@ -116,7 +116,7 @@ input {
   width: 30px;
   height: 30px;
   flex: 0 0 auto;
-  border-radius: 999px;
+  border-radius: 8px;
   object-fit: cover;
   box-shadow: 0 6px 14px rgba(15, 142, 163, 0.2);
 }
@@ -738,6 +738,34 @@ h1 {
   border: 1px solid var(--line);
   border-radius: 10px;
   background: #fff;
+}
+
+.saving-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 30;
+  display: grid;
+  place-items: center;
+  background: rgba(31, 41, 55, 0.42);
+}
+
+.saving-overlay[hidden] {
+  display: none;
+}
+
+.saving-overlay img {
+  width: 82px;
+  height: 82px;
+  border-radius: 18px;
+  object-fit: cover;
+  box-shadow: 0 18px 50px rgba(15, 23, 42, 0.26);
+  animation: saving-rotate 1s linear infinite;
+}
+
+@keyframes saving-rotate {
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .record-check {

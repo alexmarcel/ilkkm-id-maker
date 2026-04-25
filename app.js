@@ -13,6 +13,7 @@ const PHOTO_COMPRESSION = {
   minQuality: 0.65,
   qualityStep: 0.05,
 };
+const SAVE_OVERLAY_HIDE_DELAY = 3000;
 
 const LAYOUT = {
   front: {
@@ -110,6 +111,7 @@ const elements = {
   downloadBackPreview: document.querySelector('#downloadBackPreview'),
   refreshRecords: document.querySelector('#refreshRecords'),
   cohortRecordsBody: document.querySelector('#cohortRecordsBody'),
+  savingOverlay: document.querySelector('#savingOverlay'),
   frontTab: document.querySelector('#frontTab'),
   backTab: document.querySelector('#backTab'),
   frontCanvas: document.querySelector('#frontCanvas'),
@@ -314,6 +316,11 @@ function setSaveButtonLoading(isLoading) {
   if (window.lucide) {
     window.lucide.createIcons();
   }
+}
+
+function setSavingOverlay(isVisible) {
+  elements.savingOverlay.hidden = !isVisible;
+  document.body.classList.toggle('modal-open', isVisible);
 }
 
 function setSaveStatus(message, type = '') {
@@ -900,6 +907,7 @@ async function saveStudent() {
 
   state.saveInProgress = true;
   setSaveButtonLoading(true);
+  setSavingOverlay(true);
   updateStatus();
   setSaveStatus('Saving student data...', 'loading');
 
@@ -943,6 +951,7 @@ async function saveStudent() {
     state.saveInProgress = false;
     setSaveButtonLoading(false);
     updateStatus();
+    window.setTimeout(() => setSavingOverlay(false), SAVE_OVERLAY_HIDE_DELAY);
   }
 }
 
