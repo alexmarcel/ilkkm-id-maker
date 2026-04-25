@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>ILKKM ID Card Maker</title>
+    <link rel="stylesheet" href="styles.css">
+  </head>
+  <body>
+    <main class="app-shell">
+      <section class="workspace" aria-label="Student ID card maker">
+        <form class="control-panel" id="cardForm" novalidate>
+          <div class="heading">
+            <h5 class="eyebrow">
+              <i data-lucide="image-down" aria-hidden="true"></i>
+              <span>ILKKM ID CARD GENERATOR</span>
+            </h5>
+          </div>
+
+          <div class="field upload-field">
+            <span>Photo</span>
+            <label class="upload-button" for="photoInput" tabindex="0">
+              <i data-lucide="image-up" aria-hidden="true"></i>
+              <span id="photoButtonText">Upload Photo</span>
+            </label>
+            <input id="photoInput" name="photo" type="file" accept="image/*" required>
+          </div>
+
+          <label class="field">
+            <span>Name</span>
+            <input id="nameInput" name="name" type="text" autocomplete="name" required>
+          </label>
+
+          <label class="field">
+            <span>Matrix Number</span>
+            <input id="matrixInput" name="matrix" type="text" required>
+          </label>
+
+          <label class="field">
+            <span>IC Number</span>
+            <input
+              id="icInput"
+              name="ic"
+              type="text"
+              inputmode="numeric"
+              placeholder=""
+              maxlength="14"
+              required
+            >
+          </label>
+
+          <label class="field">
+            <span>Program</span>
+            <input id="programInput" type="text" value="DIPLOMA KEJURURAWATAN" disabled>
+          </label>
+
+          <label class="field">
+            <span>Sesi</span>
+            <input id="sesiInput" type="text" value="SESI JANUARI 2026 - DISEMBER 2028" disabled>
+          </label>
+
+        </form>
+
+        <section class="preview-panel" aria-label="Generated card preview">
+          <div class="preview-toolbar" role="tablist" aria-label="Preview side">
+            <button id="frontTab" class="tab-button active" type="button" role="tab" aria-selected="true">Front</button>
+            <button id="backTab" class="tab-button" type="button" role="tab" aria-selected="false">Back</button>
+          </div>
+
+          <div class="preview-frame">
+            <canvas id="frontCanvas" class="preview-canvas active" width="1967" height="3121" aria-label="Front card preview"></canvas>
+            <canvas id="backCanvas" class="preview-canvas" width="1967" height="3121" aria-label="Back card preview"></canvas>
+          </div>
+
+          <div class="download-actions preview-download-actions">
+            <button id="downloadFrontPreview" class="active" type="button" disabled>
+              <i data-lucide="download" aria-hidden="true"></i>
+              <span>Download Front JPG</span>
+            </button>
+            <button id="downloadBackPreview" type="button" disabled>
+              <i data-lucide="download" aria-hidden="true"></i>
+              <span>Download Back JPG</span>
+            </button>
+          </div>
+        </section>
+      </section>
+    </main>
+
+    <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
+    <script src="app.js"></script>
+  </body>
+</html>
