@@ -5,8 +5,11 @@ A static browser app for generating student ID card images from blank `front.jpg
 ## Features
 
 - Upload a student portrait photo.
+- JPG/PNG photos are center-cropped and compressed in the browser before save.
 - Enter student name, matrix number, and IC number.
 - IC number is formatted as `######-##-####`.
+- Automatically checks saved records when a valid IC number is typed.
+- Save student details, photo, and generated front/back JPGs to the server.
 - Program is fixed as `DIPLOMA KEJURURAWATAN`.
 - Sesi is fixed as `SESI JANUARI 2026 - DISEMBER 2028`.
 - Preview front and back card images in the browser.
@@ -27,9 +30,57 @@ A static browser app for generating student ID card images from blank `front.jpg
 
 ## How To Use
 
-Open `index.html` directly in a browser.
+For the original static-only preview workflow, open `index.html` directly in a browser.
 
 The app runs fully in the browser. It does not upload or store student data on a server.
+
+For SQLite-backed exports, run the Node server:
+
+```bash
+npm install
+npm start
+```
+
+Then open:
+
+- Generator: `http://localhost:3000/`
+- Exports: `http://localhost:3000/exports`
+
+The exports page and export APIs are password protected with HTTP Basic Auth.
+Default credentials:
+
+- Username: `admin`
+- Password: `ilkkm2026`
+
+Change them with `EXPORTS_USERNAME` and `EXPORTS_PASSWORD`.
+
+## Docker
+
+Build and run with Docker Compose:
+
+```bash
+docker compose up --build
+```
+
+The app is served on `http://localhost:3000`.
+
+Persistent data is mounted at `./data`:
+
+- `./data/app.sqlite`
+- `./data/photos`
+- `./data/exports`
+
+## Save Workflow
+
+When `Save` is clicked, the app stores:
+
+- Student details in SQLite, using IC number as the unique ID.
+- Uploaded photo in `photos`.
+- Generated front/back JPGs in the Program+Sesi export folder.
+
+Existing IC numbers are updated.
+
+Photo uploads must be JPG or PNG. The browser compresses the card portrait photo to JPG before saving, and the backend enforces a final `1MB` limit.
 
 ## Template Requirements
 
@@ -43,6 +94,7 @@ The app expects:
 ## Notes
 
 - Long names wrap into up to two rows on the front and back.
-- Uploaded photos are center-cropped into the front photo area.
+- Uploaded photos are center-cropped into the front photo area and saved as compressed JPG portraits.
 - Preview rendering is optimized for mobile typing performance.
 - Download rendering uses higher-quality canvas output for smoother text and images.
+- The Exports page downloads saved generated cards from SQLite records and the server export folder.

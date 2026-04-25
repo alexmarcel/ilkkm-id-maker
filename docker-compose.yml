@@ -1,0 +1,12 @@
+services:
+  ilkkm-id-maker:
+    build: .
+    ports:
+      - "3000:3000"
+    environment:
+      DATA_DIR: /data
+      EXPORTS_USERNAME: admin
+      EXPORTS_PASSWORD: ilkkm2026
+    volumes:
+      - ./data:/data
+    restart: unless-stopped

@@ -3,6 +3,16 @@ const TEMPLATE_HEIGHT = 3121;
 const RENDER_SCALE = 2;
 const PROGRAM = 'DIPLOMA KEJURURAWATAN';
 const SESI = 'SESI JANUARI 2026 - DISEMBER 2028';
+const MAX_PHOTO_SIZE = 1024 * 1024;
+const ALLOWED_PHOTO_TYPES = new Set(['image/jpeg', 'image/png']);
+const MATRIX_PATTERN = /^[A-Z]{4} \d\/\d{4}\(\d{2}\)-\d{4}$/;
+const PHOTO_JPEG_TYPE = 'image/jpeg';
+const PHOTO_JPEG_EXTENSION = '.jpg';
+const PHOTO_COMPRESSION = {
+  startQuality: 0.9,
+  minQuality: 0.65,
+  qualityStep: 0.05,
+};
 
 const LAYOUT = {
   front: {
@@ -71,24 +81,35 @@ const state = {
     back: null,
   },
   uploadedPhoto: null,
+  uploadedPhotoFile: null,
   activeSide: 'front',
   dirty: {
     front: true,
     back: true,
   },
   renderTimer: null,
+  lookupTimer: null,
+  lookupController: null,
+  saveInProgress: false,
 };
 
 const elements = {
   form: document.querySelector('#cardForm'),
   photoInput: document.querySelector('#photoInput'),
   photoButtonText: document.querySelector('#photoButtonText'),
+  photoStatus: document.querySelector('#photoStatus'),
   nameInput: document.querySelector('#nameInput'),
   matrixInput: document.querySelector('#matrixInput'),
   icInput: document.querySelector('#icInput'),
+  programInput: document.querySelector('#programInput'),
+  sesiInput: document.querySelector('#sesiInput'),
   uploadButton: document.querySelector('.upload-button'),
+  saveStudent: document.querySelector('#saveStudent'),
+  saveStatus: document.querySelector('#saveStatus'),
   downloadFrontPreview: document.querySelector('#downloadFrontPreview'),
   downloadBackPreview: document.querySelector('#downloadBackPreview'),
+  refreshRecords: document.querySelector('#refreshRecords'),
+  cohortRecordsBody: document.querySelector('#cohortRecordsBody'),
   frontTab: document.querySelector('#frontTab'),
   backTab: document.querySelector('#backTab'),
   frontCanvas: document.querySelector('#frontCanvas'),
@@ -128,13 +149,93 @@ function loadImage(src) {
   });
 }
 
+function getCanvasBlob(canvas, type = PHOTO_JPEG_TYPE, quality = 0.9) {
+  return new Promise((resolve) => {
+    canvas.toBlob((blob) => resolve(blob), type, quality);
+  });
+}
+
+async function loadBlobImage(blob) {
+  const objectUrl = URL.createObjectURL(blob);
+
+  try {
+    return await loadImage(objectUrl);
+  } finally {
+    URL.revokeObjectURL(objectUrl);
+  }
+}
+
+function getCroppedSourceRect(image, targetRatio) {
+  const sourceRatio = image.width / image.height;
+  let sx = 0;
+  let sy = 0;
+  let sw = image.width;
+  let sh = image.height;
+
+  if (sourceRatio > targetRatio) {
+    sw = image.height * targetRatio;
+    sx = (image.width - sw) / 2;
+  } else {
+    sh = image.width / targetRatio;
+    sy = (image.height - sh) / 2;
+  }
+
+  return { sx, sy, sw, sh };
+}
+
+async function compressUploadedPhoto(file) {
+  const objectUrl = URL.createObjectURL(file);
+
+  try {
+    const sourceImage = await loadImage(objectUrl);
+    const photoBox = LAYOUT.front.photo;
+    const canvas = document.createElement('canvas');
+    canvas.width = photoBox.width;
+    canvas.height = photoBox.height;
+
+    const context = canvas.getContext('2d');
+    setHighQualitySmoothing(context);
+
+    const crop = getCroppedSourceRect(sourceImage, photoBox.width / photoBox.height);
+    context.drawImage(
+      sourceImage,
+      crop.sx,
+      crop.sy,
+      crop.sw,
+      crop.sh,
+      0,
+      0,
+      canvas.width,
+      canvas.height,
+    );
+
+    for (
+      let quality = PHOTO_COMPRESSION.startQuality;
+      quality >= PHOTO_COMPRESSION.minQuality;
+      quality -= PHOTO_COMPRESSION.qualityStep
+    ) {
+      const blob = await getCanvasBlob(canvas, PHOTO_JPEG_TYPE, quality);
+      if (blob && blob.size <= MAX_PHOTO_SIZE) {
+        return {
+          blob,
+          image: await loadBlobImage(blob),
+        };
+      }
+    }
+
+    return null;
+  } finally {
+    URL.revokeObjectURL(objectUrl);
+  }
+}
+
 function getFormData() {
   return {
     name: elements.nameInput.value.trim().toUpperCase(),
     matrix: elements.matrixInput.value.trim().toUpperCase(),
     ic: elements.icInput.value.trim().toUpperCase(),
-    program: PROGRAM,
-    sesi: SESI,
+    program: (elements.programInput?.value || PROGRAM).trim().toUpperCase(),
+    sesi: (elements.sesiInput?.value || SESI).trim().toUpperCase(),
   };
 }
 
@@ -142,21 +243,111 @@ function isValidIc(value) {
   return /^\d{6}-\d{2}-\d{4}$/.test(value);
 }
 
+function isValidMatrix(value) {
+  return MATRIX_PATTERN.test(value);
+}
+
 function isReady() {
   const data = getFormData();
-  return Boolean(state.uploadedPhoto && data.name && data.matrix && isValidIc(data.ic));
+  return Boolean(state.uploadedPhoto && data.name && isValidMatrix(data.matrix) && isValidIc(data.ic));
+}
+
+function hasIcValue() {
+  return Boolean(elements.icInput.value.trim());
+}
+
+function updateFieldAvailability() {
+  const enabled = hasIcValue();
+
+  elements.photoInput.disabled = !enabled;
+  elements.nameInput.disabled = !enabled;
+  elements.matrixInput.disabled = !enabled;
+  elements.uploadButton.classList.toggle('disabled', !enabled);
+  elements.uploadButton.setAttribute('aria-disabled', String(!enabled));
+  elements.uploadButton.tabIndex = enabled ? 0 : -1;
 }
 
 function updateStatus() {
   const data = getFormData();
+  updateFieldAvailability();
   const ready = isReady();
   elements.downloadFrontPreview.disabled = !ready;
   elements.downloadBackPreview.disabled = !ready;
+  elements.saveStudent.disabled = !ready || state.saveInProgress;
 
   if (data.ic && !isValidIc(data.ic)) {
     elements.icInput.setCustomValidity('Use IC format 860108-49-5026.');
   } else {
     elements.icInput.setCustomValidity('');
+  }
+
+  if (data.matrix && !isValidMatrix(data.matrix)) {
+    elements.matrixInput.setCustomValidity('Use matrix format ABCD 1/1111(11)-1111.');
+  } else {
+    elements.matrixInput.setCustomValidity('');
+  }
+}
+
+function setSaveButtonLoading(isLoading) {
+  const iconElement = elements.saveStudent.querySelector('i, svg');
+  const labelElement = elements.saveStudent.querySelector('span');
+
+  labelElement.textContent = isLoading ? 'Saving...' : 'Save';
+  elements.saveStudent.classList.toggle('loading', isLoading);
+
+  if (iconElement) {
+    iconElement.setAttribute('data-lucide', isLoading ? 'loader-circle' : 'save');
+  }
+
+  if (window.lucide) {
+    window.lucide.createIcons();
+  }
+}
+
+function setSaveStatus(message, type = '') {
+  const messageElement = elements.saveStatus.querySelector('span');
+  const iconElement = elements.saveStatus.querySelector('i, svg');
+  messageElement.textContent = message;
+  elements.saveStatus.classList.remove('error', 'ready', 'loading');
+
+  if (type) {
+    elements.saveStatus.classList.add(type);
+  }
+
+  setStatusIcon(iconElement, type);
+}
+
+function setPhotoStatus(message, type = '') {
+  const messageElement = elements.photoStatus.querySelector('span');
+  const iconElement = elements.photoStatus.querySelector('i, svg');
+  messageElement.textContent = message;
+  elements.photoStatus.classList.remove('error', 'ready');
+  elements.photoStatus.classList.toggle('has-message', Boolean(message));
+
+  if (type) {
+    elements.photoStatus.classList.add(type);
+  }
+
+  setStatusIcon(iconElement, type);
+}
+
+function setStatusIcon(iconElement, type = '') {
+  if (!iconElement) {
+    return;
+  }
+
+  const iconName = type === 'ready'
+    ? 'circle-check'
+    : type === 'error'
+      ? 'circle-alert'
+      : type === 'loading'
+        ? 'loader-circle'
+        : 'info';
+
+  iconElement.setAttribute('data-lucide', iconName);
+
+  if (window.lucide) {
+    window.lucide.createIcons();
   }
 }
 
@@ -417,7 +608,7 @@ function downloadBlob(blob, filename) {
   URL.revokeObjectURL(link.href);
 }
 
-function downloadRenderedSide(side) {
+function getRenderedBlob(side) {
   const canvas = document.createElement('canvas');
   canvas.width = TEMPLATE_WIDTH;
   canvas.height = TEMPLATE_HEIGHT;
@@ -426,7 +617,14 @@ function downloadRenderedSide(side) {
   const drawScene = side === 'front' ? drawFrontScene : drawBackScene;
   renderSupersampled(context, drawScene);
 
-  canvas.toBlob((blob) => downloadBlob(blob, getFilename(side)), 'image/jpeg', 0.95);
+  return new Promise((resolve) => {
+    canvas.toBlob((blob) => resolve(blob), 'image/jpeg', 0.95);
+  });
+}
+
+async function downloadRenderedSide(side) {
+  const blob = await getRenderedBlob(side);
+  downloadBlob(blob, getFilename(side));
 }
 
 function getFilename(suffix) {
@@ -434,23 +632,126 @@ function getFilename(suffix) {
   return `${ic}_${suffix}.jpg`;
 }
 
+function buildQuery(params) {
+  const query = new URLSearchParams();
+  Object.entries(params).forEach(([key, value]) => {
+    query.set(key, value);
+  });
+  return query.toString();
+}
+
+function renderRecordsMessage(message) {
+  elements.cohortRecordsBody.innerHTML = '';
+  const row = document.createElement('tr');
+  const cell = document.createElement('td');
+  cell.colSpan = 4;
+  cell.textContent = message;
+  row.append(cell);
+  elements.cohortRecordsBody.append(row);
+}
+
+function renderCohortRecords(records) {
+  elements.cohortRecordsBody.innerHTML = '';
+
+  if (records.length === 0) {
+    renderRecordsMessage('No saved records yet.');
+    return;
+  }
+
+  records.forEach((record) => {
+    const row = document.createElement('tr');
+    const numberCell = document.createElement('td');
+    const nameCell = document.createElement('td');
+    const matrixCell = document.createElement('td');
+    const checkCell = document.createElement('td');
+    const check = document.createElement('span');
+
+    numberCell.textContent = record.number;
+    nameCell.textContent = record.name;
+    matrixCell.textContent = record.matrixNumber;
+    check.className = 'record-check';
+    check.innerHTML = '<i data-lucide="check" aria-hidden="true"></i>';
+    checkCell.append(check);
+    row.append(numberCell, nameCell, matrixCell, checkCell);
+    elements.cohortRecordsBody.append(row);
+  });
+
+  if (window.lucide) {
+    window.lucide.createIcons();
+  }
+}
+
+async function refreshCohortRecords() {
+  renderRecordsMessage('Loading records...');
+
+  try {
+    const data = getFormData();
+    const response = await fetch(`/api/students/records/cohort?${buildQuery({
+      program: data.program,
+      sesi: data.sesi,
+    })}`);
+
+    if (!response.ok) {
+      throw new Error('Records request failed');
+    }
+
+    const result = await response.json();
+    renderCohortRecords(result.records || []);
+  } catch (error) {
+    renderRecordsMessage('Could not load records.');
+  }
+}
+
 async function handlePhotoChange() {
   const file = elements.photoInput.files[0];
 
   if (!file) {
     state.uploadedPhoto = null;
+    state.uploadedPhotoFile = null;
     elements.photoButtonText.textContent = 'Upload Photo';
+    setPhotoStatus('');
+    markDirty();
+    renderNow();
+    return;
+  }
+
+  if (!hasIcValue()) {
+    elements.photoInput.value = '';
+    setPhotoStatus('Enter IC number before uploading a photo.', 'error');
+    return;
+  }
+
+  if (!ALLOWED_PHOTO_TYPES.has(file.type)) {
+    elements.photoInput.value = '';
+    state.uploadedPhoto = null;
+    state.uploadedPhotoFile = null;
+    elements.photoButtonText.textContent = 'Upload Photo';
+    setPhotoStatus('Photo must be a JPG or PNG image.', 'error');
     markDirty();
     renderNow();
     return;
   }
 
   elements.photoButtonText.textContent = file.name;
-  const objectUrl = URL.createObjectURL(file);
+  setPhotoStatus('Compressing photo...');
+
   try {
-    state.uploadedPhoto = await loadImage(objectUrl);
-  } finally {
-    URL.revokeObjectURL(objectUrl);
+    const compressed = await compressUploadedPhoto(file);
+    if (!compressed) {
+      throw new Error('Photo is too large to compress under 1MB.');
+    }
+
+    const filename = `${getFormData().ic.replace(/-/g, '')}_photo${PHOTO_JPEG_EXTENSION}`;
+    state.uploadedPhoto = compressed.image;
+    state.uploadedPhotoFile = new File([compressed.blob], filename, { type: PHOTO_JPEG_TYPE });
+    elements.photoButtonText.textContent = filename;
+    setPhotoStatus('Photo compressed and ready.', 'ready');
+  } catch (error) {
+    elements.photoInput.value = '';
+    state.uploadedPhoto = null;
+    state.uploadedPhotoFile = null;
+    elements.photoButtonText.textContent = 'Upload Photo';
+    setPhotoStatus(error.message || 'Photo compression failed.', 'error');
   }
 
   markDirty();
@@ -466,6 +767,160 @@ function formatIcInput(event) {
   ].filter(Boolean);
 
   event.target.value = parts.join('-');
+}
+
+function formatMatrixInput(event) {
+  const raw = event.target.value.toUpperCase();
+  const letters = raw.replace(/[^A-Z]/g, '').slice(0, 4);
+  const digits = raw.replace(/\D/g, '').slice(0, 11);
+  let value = letters;
+
+  if (letters.length === 4 && digits.length > 0) {
+    value += ` ${digits.slice(0, 1)}`;
+  }
+
+  if (digits.length > 1) {
+    value += `/${digits.slice(1, 5)}`;
+  }
+
+  if (digits.length > 5) {
+    value += `(${digits.slice(5, 7)}`;
+  }
+
+  if (digits.length > 7) {
+    value += `)-${digits.slice(7, 11)}`;
+  } else if (digits.length > 5 && raw.includes(')')) {
+    value += ')';
+  }
+
+  event.target.value = value;
+}
+
+async function lookupStudentByIc() {
+  const ic = getFormData().ic;
+
+  if (state.lookupController) {
+    state.lookupController.abort();
+  }
+
+  if (!isValidIc(ic)) {
+    setSaveStatus('Enter a valid IC number to check saved data.');
+    return;
+  }
+
+  state.lookupController = new AbortController();
+  setSaveStatus('Checking saved data...', 'loading');
+
+  try {
+    const response = await fetch(`/api/students/${encodeURIComponent(ic)}`, {
+      signal: state.lookupController.signal,
+    });
+
+    if (response.status === 404) {
+      setSaveStatus('No saved record found. Fill details and save.');
+      return;
+    }
+
+    if (!response.ok) {
+      throw new Error('Lookup failed');
+    }
+
+    const student = await response.json();
+    elements.nameInput.value = student.name || '';
+    elements.matrixInput.value = student.matrixNumber || '';
+
+    if (student.photoUrl) {
+      const cacheBust = `v=${encodeURIComponent(student.updatedAt || Date.now())}`;
+      state.uploadedPhoto = await loadImage(`${student.photoUrl}?${cacheBust}`);
+      state.uploadedPhotoFile = null;
+      elements.photoButtonText.textContent = `${student.icNumber.replace(/-/g, '')}_photo`;
+      setPhotoStatus('Saved photo loaded.', 'ready');
+    }
+
+    setSaveStatus('Saved record loaded.', 'ready');
+    markDirty();
+    renderNow();
+  } catch (error) {
+    if (error.name === 'AbortError') {
+      return;
+    }
+
+    setSaveStatus('Could not check saved data.', 'error');
+  }
+}
+
+function scheduleStudentLookup() {
+  window.clearTimeout(state.lookupTimer);
+  updateStatus();
+
+  if (!hasIcValue()) {
+    state.uploadedPhoto = null;
+    state.uploadedPhotoFile = null;
+    elements.photoInput.value = '';
+    elements.nameInput.value = '';
+    elements.matrixInput.value = '';
+    elements.photoButtonText.textContent = 'Upload Photo';
+    setPhotoStatus('');
+    setSaveStatus('Enter a valid IC number to check saved data.');
+    markDirty();
+    renderNow();
+    return;
+  }
+
+  state.lookupTimer = window.setTimeout(lookupStudentByIc, 450);
+}
+
+async function saveStudent() {
+  if (!isReady() || state.saveInProgress) {
+    return;
+  }
+
+  state.saveInProgress = true;
+  setSaveButtonLoading(true);
+  updateStatus();
+  setSaveStatus('Saving student data...', 'loading');
+
+  try {
+    const data = getFormData();
+    const [frontBlob, backBlob] = await Promise.all([
+      getRenderedBlob('front'),
+      getRenderedBlob('back'),
+    ]);
+
+    const payload = new FormData();
+    payload.set('icNumber', data.ic);
+    payload.set('name', data.name);
+    payload.set('matrixNumber', data.matrix);
+    payload.set('program', data.program);
+    payload.set('sesi', data.sesi);
+
+    if (state.uploadedPhotoFile) {
+      payload.set('photo', state.uploadedPhotoFile, state.uploadedPhotoFile.name);
+    }
+
+    payload.set('front', frontBlob, getFilename('front'));
+    payload.set('back', backBlob, getFilename('back'));
+
+    const response = await fetch('/api/students', {
+      method: 'POST',
+      body: payload,
+    });
+
+    const result = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      throw new Error(result.error || 'Could not save student.');
+    }
+
+    state.uploadedPhotoFile = null;
+    setSaveStatus(`Saved`, 'ready');
+    refreshCohortRecords();
+  } catch (error) {
+    setSaveStatus(error.message || 'Could not save student.', 'error');
+  } finally {
+    state.saveInProgress = false;
+    setSaveButtonLoading(false);
+    updateStatus();
+  }
 }
 
 async function init() {
@@ -486,20 +941,29 @@ async function init() {
   }
 
   renderNow();
+  refreshCohortRecords();
 }
 
 elements.photoInput.addEventListener('change', handlePhotoChange);
 elements.uploadButton.addEventListener('keydown', (event) => {
+  if (elements.photoInput.disabled) {
+    return;
+  }
+
   if (event.key === 'Enter' || event.key === ' ') {
     event.preventDefault();
     elements.photoInput.click();
   }
 });
 elements.nameInput.addEventListener('input', scheduleRender);
-elements.matrixInput.addEventListener('input', scheduleRender);
+elements.matrixInput.addEventListener('input', (event) => {
+  formatMatrixInput(event);
+  scheduleRender();
+});
 elements.icInput.addEventListener('input', (event) => {
   formatIcInput(event);
   scheduleRender();
+  scheduleStudentLookup();
 });
 elements.frontTab.addEventListener('click', () => setActivePreview('front'));
 elements.backTab.addEventListener('click', () => setActivePreview('back'));
@@ -513,5 +977,7 @@ elements.downloadBackPreview.addEventListener('click', () => {
     downloadRenderedSide('back');
   }
 });
+elements.saveStudent.addEventListener('click', saveStudent);
+elements.refreshRecords.addEventListener('click', refreshCohortRecords);
 
 init();

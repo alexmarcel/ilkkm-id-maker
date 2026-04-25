@@ -55,6 +55,11 @@ input {
   align-items: start;
 }
 
+.exports-shell {
+  width: min(980px, 100%);
+  margin: 0 auto;
+}
+
 .control-panel,
 .preview-panel {
   background: var(--panel);
@@ -82,7 +87,7 @@ input {
 
 .heading {
   display: grid;
-  gap: 4px;
+  gap: 8px;
   margin-bottom: 4px;
 }
 
@@ -183,10 +188,24 @@ h1 {
   transition: transform 160ms ease, box-shadow 160ms ease, filter 160ms ease;
 }
 
+.upload-button.disabled {
+  color: #89939e;
+  background: linear-gradient(135deg, #e4eaee, #f2f5f7);
+  box-shadow: none;
+  cursor: not-allowed;
+  transform: none;
+}
+
 .upload-button:hover {
   filter: saturate(1.08);
   transform: translateY(-1px);
   box-shadow: 0 18px 32px rgba(15, 142, 163, 0.3);
+}
+
+.upload-button.disabled:hover {
+  filter: none;
+  transform: none;
+  box-shadow: none;
 }
 
 .upload-button svg {
@@ -232,7 +251,8 @@ h1 {
 }
 
 .download-actions button,
-.tab-button {
+.tab-button,
+.primary-action {
   min-height: 44px;
   border: 1px solid transparent;
   border-radius: 10px;
@@ -241,7 +261,9 @@ h1 {
   transition: transform 160ms ease, box-shadow 160ms ease, background 160ms ease;
 }
 
-.download-actions button {
+.download-actions button,
+.primary-action {
+  display: inline-flex;
   align-items: center;
   justify-content: center;
   gap: 9px;
@@ -250,23 +272,213 @@ h1 {
   box-shadow: 0 12px 24px rgba(13, 86, 101, 0.22);
 }
 
-.download-actions button svg {
+.download-actions button svg,
+.primary-action svg {
   width: 19px;
   height: 19px;
   flex: 0 0 auto;
   stroke-width: 2.3;
 }
 
-.download-actions button:hover:not(:disabled) {
+.download-actions button:hover:not(:disabled),
+.primary-action:hover:not(:disabled) {
   background: linear-gradient(135deg, #0c7788 0%, #225e9a 48%, #0f875c 100%);
   transform: translateY(-1px);
 }
 
-.download-actions button:disabled {
+.download-actions button:disabled,
+.primary-action:disabled {
   color: #89939e;
   background: linear-gradient(135deg, #e4eaee, #f2f5f7);
   box-shadow: none;
   cursor: not-allowed;
+}
+
+.primary-action {
+  width: 100%;
+}
+
+.primary-action.loading svg {
+  animation: spin 700ms linear infinite;
+}
+
+.secondary-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 40px;
+  color: #0d5665;
+  font-size: 14px;
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.secondary-link:hover {
+  color: #083d49;
+  text-decoration: none;
+}
+
+.inline-link {
+  justify-content: flex-start;
+  min-height: auto;
+  gap: 7px;
+}
+
+.inline-link svg {
+  width: 16px;
+  height: 16px;
+  stroke-width: 2.5;
+}
+
+.export-count {
+  min-height: 24px;
+  margin: 0;
+  color: var(--muted);
+  font-size: 14px;
+  line-height: 1.45;
+}
+
+.field-status,
+.save-status {
+  display: none;
+  align-items: flex-start;
+  gap: 8px;
+  min-height: 36px;
+  margin: 0;
+  border: 1px solid rgba(116, 137, 158, 0.2);
+  border-radius: 10px;
+  padding: 9px 10px;
+  color: #36515d;
+  background: rgba(240, 248, 250, 0.9);
+  font-size: 13px;
+  line-height: 1.35;
+}
+
+.save-status {
+  display: flex;
+  font-size: 14px;
+}
+
+.field-status.has-message {
+  display: flex;
+}
+
+.field-status svg,
+.save-status svg {
+  width: 17px;
+  height: 17px;
+  flex: 0 0 auto;
+  margin-top: 1px;
+  stroke: #0f8ea3;
+  stroke-width: 2.3;
+}
+
+.field-status span,
+.save-status span {
+  min-width: 0;
+}
+
+.export-count.error,
+.save-status.error {
+  color: var(--danger);
+}
+
+.field-status.error,
+.save-status.error {
+  border-color: rgba(180, 35, 24, 0.18);
+  color: #8f1f17;
+  background: rgba(255, 241, 239, 0.94);
+}
+
+.field-status.error svg,
+.save-status.error svg {
+  stroke: var(--danger);
+}
+
+.export-count.ready,
+.save-status.ready {
+  color: var(--ready);
+  font-weight: 700;
+}
+
+.records-table-wrap {
+  overflow-x: auto;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.74);
+}
+
+.records-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 14px;
+}
+
+.records-table th,
+.records-table td {
+  padding: 11px 12px;
+  border-bottom: 1px solid var(--line);
+  text-align: left;
+  vertical-align: middle;
+}
+
+.records-table th {
+  color: #36515d;
+  background: rgba(240, 248, 250, 0.92);
+  font-weight: 700;
+}
+
+.records-table td:first-child,
+.records-table th:first-child {
+  width: 1%;
+  white-space: nowrap;
+}
+
+.records-table tr:last-child td {
+  border-bottom: 0;
+}
+
+.field-status.ready,
+.save-status.ready {
+  border-color: rgba(12, 122, 85, 0.2);
+  color: #0b6549;
+  background: rgba(236, 252, 246, 0.94);
+}
+
+.field-status.ready svg,
+.save-status.ready svg {
+  stroke: var(--ready);
+}
+
+.save-status.loading {
+  border-color: rgba(15, 142, 163, 0.2);
+  background: rgba(238, 249, 252, 0.94);
+}
+
+.save-status.loading svg {
+  animation: spin 700ms linear infinite;
+}
+
+.save-status.loading svg circle,
+.save-status.loading svg line,
+.save-status.loading svg path {
+  stroke: #0f8ea3;
+}
+
+.status-spinner {
+  width: 13px;
+  height: 13px;
+  border: 2px solid rgba(15, 142, 163, 0.25);
+  border-top-color: #0f8ea3;
+  border-radius: 999px;
+  vertical-align: -2px;
+  animation: spin 700ms linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .preview-panel {
@@ -300,12 +512,19 @@ h1 {
   display: grid;
   place-items: start center;
   width: 100%;
+  padding: 10px 0 20px;
   overflow: hidden;
 }
 
 .preview-download-actions {
   width: min(100%, 520px);
   margin: 16px auto 0;
+  justify-items: center;
+}
+
+.preview-download-actions button {
+  width: auto;
+  min-width: 210px;
 }
 
 .preview-download-actions button {
@@ -316,6 +535,131 @@ h1 {
   display: flex;
 }
 
+.records-card {
+  width: min(1360px, 100%);
+  margin: 24px auto 0;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 14px;
+  background: rgba(255, 255, 255, 0.76);
+}
+
+.records-card .records-table {
+  font-size: 14px;
+}
+
+.records-card .records-table th,
+.records-card .records-table td {
+  padding: 6px;
+  vertical-align: middle;
+}
+
+.records-card .record-check {
+  width: 24px;
+  height: 24px;
+}
+
+.records-card .record-check svg {
+  width: 16px;
+  height: 16px;
+  stroke-width: 3;
+}
+
+.records-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.records-card-header h2 {
+  margin: 0;
+  font-size: 17px;
+  line-height: 1.2;
+}
+
+.icon-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 38px;
+  height: 38px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  color: #0d5665;
+  background: rgba(240, 248, 250, 0.92);
+  cursor: pointer;
+}
+
+.icon-button:hover {
+  background: rgba(226, 244, 248, 0.96);
+}
+
+.icon-button svg {
+  width: 18px;
+  height: 18px;
+  stroke-width: 2.3;
+}
+
+.records-table td:last-child,
+.records-table th:last-child {
+  width: 1%;
+  text-align: left;
+  white-space: nowrap;
+}
+
+.row-delete-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  min-height: 34px;
+  border: 1px solid rgba(180, 35, 24, 0.18);
+  border-radius: 8px;
+  padding: 7px 10px;
+  color: #8f1f17;
+  background: rgba(255, 241, 239, 0.94);
+  cursor: pointer;
+  font-weight: 700;
+}
+
+.row-delete-button:hover:not(:disabled) {
+  background: rgba(255, 228, 224, 0.98);
+}
+
+.row-delete-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.72;
+}
+
+.row-delete-button svg {
+  width: 16px;
+  height: 16px;
+  stroke-width: 2.4;
+}
+
+.row-delete-button.loading svg {
+  animation: spin 700ms linear infinite;
+}
+
+.record-check {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 999px;
+  color: #fff;
+  background: var(--ready);
+}
+
+.record-check svg {
+  width: 16px;
+  height: 16px;
+  stroke-width: 3;
+}
+
 .preview-canvas {
   display: none;
   width: min(100%, 520px);
@@ -323,7 +667,7 @@ h1 {
   border: 1px solid rgba(116, 137, 158, 0.32);
   border-radius: 10px;
   background: var(--panel-solid);
-  box-shadow: 0 18px 36px rgba(20, 45, 57, 0.14);
+  box-shadow: 0 8px 18px rgba(20, 45, 57, 0.1);
   image-rendering: auto;
 }
 
@@ -370,5 +714,24 @@ h1 {
 
   .preview-canvas {
     width: 100%;
+  }
+
+  .records-card .records-table {
+    font-size: 8.4px;
+  }
+
+  .records-card .records-table th,
+  .records-card .records-table td {
+    padding: 6px;
+  }
+
+  .records-card .record-check {
+    width: 17px;
+    height: 17px;
+  }
+
+  .records-card .record-check svg {
+    width: 11px;
+    height: 11px;
   }
 }

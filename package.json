@@ -1,0 +1,20 @@
+{
+  "name": "ilkkm-id-card-generator",
+  "version": "1.0.0",
+  "private": true,
+  "description": "ILKKM student ID card generator with SQLite-backed exports.",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js"
+  },
+  "dependencies": {
+    "archiver": "^7.0.1",
+    "better-sqlite3": "^11.8.1",
+    "express": "^4.21.2",
+    "multer": "^2.1.1"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

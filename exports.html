@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Exports - ILKKM ID Card Maker</title>
+    <link rel="stylesheet" href="styles.css">
+  </head>
+  <body>
+    <main class="app-shell">
+      <section class="exports-shell" aria-label="Download generated cards">
+        <form class="control-panel exports-panel" id="exportsForm">
+          <div class="heading">
+            <h5 class="eyebrow">
+              <i data-lucide="archive" aria-hidden="true"></i>
+              <span>DOWNLOAD ALL CARDS</span>
+            </h5>
+            <a class="secondary-link inline-link" href="/">
+              <i data-lucide="arrow-left" aria-hidden="true"></i>
+              <p></p>
+              <span>BACK TO GENERATOR</span>
+            </a>
+          </div>
+
+          <label class="field">
+            <span>Program</span>
+            <input id="exportProgram" type="text" value="DIPLOMA KEJURURAWATAN" required>
+          </label>
+
+          <label class="field">
+            <span>Sesi</span>
+            <input id="exportSesi" type="text" value="SESI JANUARI 2026 - DISEMBER 2028" required>
+          </label>
+
+          <p class="export-count" id="exportCount" role="status">Loading records...</p>
+
+          <button class="primary-action" id="downloadZip" type="button" disabled>
+            <i data-lucide="package-down" aria-hidden="true"></i>
+            <span>Download ZIP</span>
+          </button>
+
+          <div class="records-table-wrap">
+            <table class="records-table" aria-label="Matching student records">
+              <thead>
+                <tr>
+                  <th scope="col"></th>
+                  <th scope="col">Name</th>
+                  <th scope="col">Matrix Number</th>
+                  <th scope="col">IC Number</th>
+                  <th scope="col">Action</th>
+                </tr>
+              </thead>
+              <tbody id="recordsTableBody">
+                <tr>
+                  <td colspan="5">Loading records...</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </form>
+      </section>
+    </main>
+
+    <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
+    <script src="exports.js"></script>
+  </body>
+</html>

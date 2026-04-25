@@ -17,24 +17,10 @@
             </h5>
           </div>
 
-          <div class="field upload-field">
-            <span>Photo</span>
-            <label class="upload-button" for="photoInput" tabindex="0">
-              <i data-lucide="image-up" aria-hidden="true"></i>
-              <span id="photoButtonText">Upload Photo</span>
-            </label>
-            <input id="photoInput" name="photo" type="file" accept="image/*" required>
-          </div>
-
-          <label class="field">
-            <span>Name</span>
-            <input id="nameInput" name="name" type="text" autocomplete="name" required>
-          </label>
-
-          <label class="field">
-            <span>Matrix Number</span>
-            <input id="matrixInput" name="matrix" type="text" required>
-          </label>
+          <p class="save-status" id="saveStatus" role="status">
+            <i data-lucide="info" aria-hidden="true"></i>
+            <span>Enter a valid IC number to check saved data.</span>
+          </p>
 
           <label class="field">
             <span>IC Number</span>
@@ -49,6 +35,36 @@
             >
           </label>
 
+          <div class="field upload-field">
+            <span>Photo</span>
+            <label class="upload-button" for="photoInput" tabindex="0">
+              <i data-lucide="image-up" aria-hidden="true"></i>
+              <span id="photoButtonText">Upload Photo</span>
+            </label>
+            <input id="photoInput" name="photo" type="file" accept="image/jpeg,image/png" required>
+            <p class="field-status" id="photoStatus" role="status">
+              <i data-lucide="info" aria-hidden="true"></i>
+              <span></span>
+            </p>
+          </div>
+
+          <label class="field">
+            <span>Name</span>
+            <input id="nameInput" name="name" type="text" autocomplete="name" required>
+          </label>
+
+          <label class="field">
+            <span>Matrix Number</span>
+            <input
+              id="matrixInput"
+              name="matrix"
+              type="text"
+              placeholder=""
+              maxlength="20"
+              required
+            >
+          </label>
+
           <label class="field">
             <span>Program</span>
             <input id="programInput" type="text" value="DIPLOMA KEJURURAWATAN" disabled>
@@ -59,6 +75,10 @@
             <input id="sesiInput" type="text" value="SESI JANUARI 2026 - DISEMBER 2028" disabled>
           </label>
 
+          <button class="primary-action save-action" id="saveStudent" type="button" disabled>
+            <i data-lucide="save" aria-hidden="true"></i>
+            <span>Save</span>
+          </button>
         </form>
 
         <section class="preview-panel" aria-label="Generated card preview">
@@ -75,14 +95,40 @@
           <div class="download-actions preview-download-actions">
             <button id="downloadFrontPreview" class="active" type="button" disabled>
               <i data-lucide="download" aria-hidden="true"></i>
-              <span>Download Front JPG</span>
+              <span>Download Front</span>
             </button>
             <button id="downloadBackPreview" type="button" disabled>
               <i data-lucide="download" aria-hidden="true"></i>
-              <span>Download Back JPG</span>
+              <span>Download Back</span>
             </button>
           </div>
         </section>
+      </section>
+
+      <section class="records-card" aria-label="Saved cohort records">
+        <div class="records-card-header">
+          <h2>Saved Records</h2>
+          <button class="icon-button" id="refreshRecords" type="button" aria-label="Refresh saved records">
+            <i data-lucide="refresh-cw" aria-hidden="true"></i>
+          </button>
+        </div>
+        <div class="records-table-wrap">
+          <table class="records-table" aria-label="Saved records for this cohort">
+            <thead>
+              <tr>
+                <th scope="col"></th>
+                <th scope="col">Name</th>
+                <th scope="col">Matrix Number</th>
+                <th scope="col">Saved</th>
+              </tr>
+            </thead>
+            <tbody id="cohortRecordsBody">
+              <tr>
+                <td colspan="4">Loading records...</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
       </section>
     </main>
 
