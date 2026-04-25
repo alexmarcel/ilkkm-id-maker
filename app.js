@@ -257,7 +257,7 @@ function hasIcValue() {
 }
 
 function updateFieldAvailability() {
-  const enabled = hasIcValue();
+  const enabled = isValidIc(getFormData().ic);
 
   elements.photoInput.disabled = !enabled;
   elements.nameInput.disabled = !enabled;
