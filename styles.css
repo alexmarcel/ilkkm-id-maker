@@ -694,6 +694,10 @@ h1 {
   background: rgba(15, 23, 42, 0.56);
 }
 
+.modal-overlay[hidden] {
+  display: none;
+}
+
 .modal-dialog {
   width: min(680px, 100%);
   max-height: min(92vh, 980px);

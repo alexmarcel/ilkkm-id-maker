@@ -1,116 +1,123 @@
 # ILKKM ID Card Generator
 
-A static browser app for generating student ID card images from blank `front.jpg` and `back.jpg` templates.
+Browser-based student ID card generator with a Node/SQLite backend for saving records, photos, generated card images, and cohort exports.
 
 ## Features
 
-- Upload a student portrait photo.
-- JPG/PNG photos are center-cropped and compressed in the browser before save.
-- Enter student name, matrix number, and IC number.
-- IC number is formatted as `######-##-####`.
-- Automatically checks saved records when a valid IC number is typed.
-- Save student details, photo, and generated front/back JPGs to the server.
-- Program is fixed as `DIPLOMA KEJURURAWATAN`.
-- Sesi is fixed as `SESI JANUARI 2026 - DISEMBER 2028`.
-- Preview front and back card images in the browser.
-- Download generated JPG files:
-  - `{icnumber}_front.jpg`
-  - `{icnumber}_back.jpg`
-- IC hyphens are removed from filenames. Example:
-  - Input: `860108-49-5026`
-  - Output: `860108495026_front.jpg`
+- Generate front/back student ID JPGs from `front.jpg` and `back.jpg`.
+- IC number lookup using format `######-##-####`.
+- Matrix number enforcement using format `ABCD 1/1111(11)-1111`.
+- IC lookup auto-populates saved name, matrix number, and photo.
+- If no IC record exists, the form clears photo, name, and matrix fields.
+- Photo upload accepts JPG/PNG, center-crops to the card portrait ratio, compresses to JPG in the browser, and saves under `1MB`.
+- Saved Records table on the main page shows cohort records with saved status.
+- Protected Exports page lists records, previews front/back cards in modals, deletes rows, and downloads all cards as a ZIP.
 
-## Files
-
-- `index.html` - App markup.
-- `styles.css` - Responsive UI styling.
-- `app.js` - Canvas rendering, validation, preview, and download logic.
-- `front.jpg` - Blank front card template.
-- `back.jpg` - Blank back card template.
-
-## How To Use
-
-For the original static-only preview workflow, open `index.html` directly in a browser.
-
-The app runs fully in the browser. It does not upload or store student data on a server.
-
-For SQLite-backed exports, run the Node server:
+## Running Locally
 
 ```bash
 npm install
 npm start
 ```
 
-Then open:
+Open:
 
 - Generator: `http://localhost:3000/`
 - Exports: `http://localhost:3000/exports`
 
-The exports page and export APIs are password protected with HTTP Basic Auth.
+The Exports page and export APIs use HTTP Basic Auth.
+
 Default credentials:
 
 - Username: `admin`
 - Password: `ilkkm2026`
 
-Change them with `EXPORTS_USERNAME` and `EXPORTS_PASSWORD`.
+Change them with:
 
-## Docker
+```bash
+EXPORTS_USERNAME=admin
+EXPORTS_PASSWORD=your-secure-password
+```
 
-For the VPS Traefik stack, add the `ilkkm-id-maker` service from `docker-compose.yml` to your existing compose file.
+## Save Workflow
 
-It is configured for:
+When a valid IC number is typed, the app checks SQLite for an existing student.
 
-- GitHub build context: `https://github.com/alexmarcel/ilkkm-id-maker.git#main`
-- Traefik host: `id.alexmarcel.com`
-- Internal app port: `3000`
-- Persistent volume mounted at `/data`
+When `Save` is clicked, the backend stores:
 
-Set these environment variables before deploying:
+- Student details in SQLite, using IC number as the unique ID.
+- Compressed portrait photo in `/data/photos`.
+- Generated front/back JPGs in `/data/exports/{PROGRAM_SESI_SLUG}`.
+
+Existing IC numbers are updated. Saved filenames remove IC hyphens:
+
+- `{icnumber}_photo.jpg`
+- `{icnumber}_front.jpg`
+- `{icnumber}_back.jpg`
+
+## Exports
+
+The Exports page supports:
+
+- Record table with number, name, matrix number, and IC number.
+- Front-card modal preview via the `file-input` icon.
+- Back-card modal preview via the `file-output` icon.
+- Row delete via the trash icon.
+- ZIP download of all generated cards for the selected Program/Sesi.
+
+ZIP structure:
+
+```text
+{ic_without_hyphens}/
+  {ic_without_hyphens}_front.jpg
+  {ic_without_hyphens}_back.jpg
+```
+
+## Docker / Traefik
+
+`docker-compose.yml` is prepared for your Traefik VPS stack.
+
+It builds from:
+
+```text
+https://github.com/alexmarcel/ilkkm-id-maker.git#main
+```
+
+Default Traefik host:
+
+```text
+id.alexmarcel.com
+```
+
+Add the service from `docker-compose.yml` into your existing Traefik compose file and add this volume:
+
+```yaml
+volumes:
+  ilkkm_id_maker_data:
+```
+
+Set exports credentials in your VPS `.env`:
 
 ```bash
 ID_MAKER_EXPORTS_USERNAME=admin
 ID_MAKER_EXPORTS_PASSWORD=your-secure-password
 ```
 
-If running this repo by itself, build and run with Docker Compose:
+Persistent app data is mounted at `/data` inside the container.
 
-```bash
-docker compose up --build
-```
+## Important Files
 
-The app is served on `http://localhost:3000`.
-
-Persistent data is mounted at `./data`:
-
-- `./data/app.sqlite`
-- `./data/photos`
-- `./data/exports`
-
-## Save Workflow
-
-When `Save` is clicked, the app stores:
-
-- Student details in SQLite, using IC number as the unique ID.
-- Uploaded photo in `photos`.
-- Generated front/back JPGs in the Program+Sesi export folder.
-
-Existing IC numbers are updated.
-
-Photo uploads must be JPG or PNG. The browser compresses the card portrait photo to JPG before saving, and the backend enforces a final `1MB` limit.
+- `server.js` - Express server, SQLite schema, save/export/delete APIs.
+- `index.html` / `app.js` - Main generator UI and canvas rendering.
+- `exports.html` / `exports.js` - Protected exports UI.
+- `styles.css` - Shared responsive UI styles.
+- `front.jpg` / `back.jpg` - Blank card templates.
+- `icon.jpg` - Header icon.
+- `Dockerfile` / `docker-compose.yml` - Container deployment.
 
 ## Template Requirements
 
-The app expects:
-
-- `front.jpg` and `back.jpg` to be in the same folder as `index.html`.
-- Both templates to be `1967x3121`.
-- Templates to already contain all fixed design elements and labels.
-- Variable areas for photo, name, matrix number, IC number, program, and sesi to be blank.
-
-## Notes
-
-- Long names wrap into up to two rows on the front and back.
-- Uploaded photos are center-cropped into the front photo area and saved as compressed JPG portraits.
-- Preview rendering is optimized for mobile typing performance.
-- Download rendering uses higher-quality canvas output for smoother text and images.
-- The Exports page downloads saved generated cards from SQLite records and the server export folder.
+- `front.jpg` and `back.jpg` must be available beside the app files.
+- Both templates should be `1967x3121`.
+- Fixed labels/design should already be baked into the templates.
+- Variable areas for photo, name, matrix number, IC number, program, and sesi should be blank.
