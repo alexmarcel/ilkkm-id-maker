@@ -57,11 +57,15 @@ function renderCards(records) {
     backImage.loading = 'lazy';
     frontImage.alt = `Front card for ${record.name}`;
     backImage.alt = `Back card for ${record.name}`;
-    frontImage.src = `/api/students/${encodeURIComponent(record.icNumber)}/card/front?v=${Date.now()}`;
-    backImage.src = `/api/students/${encodeURIComponent(record.icNumber)}/card/back?v=${Date.now()}`;
+    frontImage.src = `/api/students/${encodeURIComponent(record.icNumber)}/card/front/thumbnail`;
+    backImage.dataset.src = `/api/students/${encodeURIComponent(record.icNumber)}/card/back/thumbnail`;
     inner.append(frontImage, backImage);
     item.append(inner);
     item.addEventListener('click', () => {
+      if (!backImage.src) {
+        backImage.src = backImage.dataset.src;
+      }
+
       const isBack = item.classList.toggle('flipped');
       item.dataset.side = isBack ? 'back' : 'front';
     });

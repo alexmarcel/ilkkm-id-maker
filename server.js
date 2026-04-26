@@ -16,6 +16,7 @@ const DATA_DIR = process.env.DATA_DIR || path.join(ROOT_DIR, '.data');
 const DB_PATH = process.env.DB_PATH || path.join(DATA_DIR, 'app.sqlite');
 const EXPORTS_DIR = process.env.EXPORTS_DIR || path.join(DATA_DIR, 'exports');
 const PHOTOS_DIR = process.env.PHOTOS_DIR || path.join(DATA_DIR, 'photos');
+const THUMBNAILS_DIR = process.env.THUMBNAILS_DIR || path.join(DATA_DIR, 'thumbnails');
 const DEFAULT_PROGRAM = 'DIPLOMA KEJURURAWATAN';
 const DEFAULT_SESI = 'SESI JANUARI 2026 - DISEMBER 2028';
 const EXPORTS_USERNAME = process.env.EXPORTS_USERNAME || 'admin';
@@ -26,6 +27,7 @@ const VALID_IC_PATTERN = /^\d{6}-\d{2}-\d{4}$/;
 const VALID_MATRIX_PATTERN = /^[A-Z]{4} \d\/\d{4}\(\d{2}\)-\d{4}$/;
 const TEMPLATE_WIDTH = 1967;
 const TEMPLATE_HEIGHT = 3121;
+const THUMBNAIL_WIDTH = 720;
 const FONT_PATH = path.join(ROOT_DIR, 'assets', 'fonts', 'liberation-sans-bold.ttf');
 const FRONT_TEMPLATE_PATH = path.join(ROOT_DIR, 'front.jpg');
 const BACK_TEMPLATE_PATH = path.join(ROOT_DIR, 'back.jpg');
@@ -91,6 +93,7 @@ const CARD_LAYOUT = {
 fs.mkdirSync(DATA_DIR, { recursive: true });
 fs.mkdirSync(EXPORTS_DIR, { recursive: true });
 fs.mkdirSync(PHOTOS_DIR, { recursive: true });
+fs.mkdirSync(THUMBNAILS_DIR, { recursive: true });
 
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -178,6 +181,35 @@ function removeFileIfExists(filePath) {
   if (filePath && fs.existsSync(filePath)) {
     fs.rmSync(filePath, { force: true });
   }
+}
+
+function getThumbnailFilename(icNumber, side) {
+  return `${stripIcHyphens(icNumber)}_${side}.jpg`;
+}
+
+function removeStudentThumbnails(icNumber) {
+  removeFileIfExists(resolveInside(THUMBNAILS_DIR, getThumbnailFilename(icNumber, 'front')));
+  removeFileIfExists(resolveInside(THUMBNAILS_DIR, getThumbnailFilename(icNumber, 'back')));
+}
+
+async function getCardThumbnailPath(student, side) {
+  const cardPath = getExportCardPath(student, side);
+  if (!cardPath || !fs.existsSync(cardPath)) {
+    return null;
+  }
+
+  const thumbnailFilename = getThumbnailFilename(student.ic_number, side);
+  const thumbnailPath = path.join(THUMBNAILS_DIR, thumbnailFilename);
+
+  if (!fs.existsSync(thumbnailPath)) {
+    fs.mkdirSync(THUMBNAILS_DIR, { recursive: true });
+    await sharp(cardPath)
+      .resize({ width: THUMBNAIL_WIDTH })
+      .jpeg({ quality: 86 })
+      .toFile(thumbnailPath);
+  }
+
+  return thumbnailPath;
 }
 
 function getStudent(icNumber) {
@@ -478,6 +510,8 @@ async function renderStudentCards(student) {
     .composite([{ input: backTextSvg, left: 0, top: 0 }])
     .jpeg({ quality: 95 })
     .toFile(backPath);
+
+  removeStudentThumbnails(data.ic);
 
   db.prepare(`
     UPDATE students
@@ -785,6 +819,7 @@ async function restoreCohortBackup(parsed, program, sesi) {
       removeFileIfExists(resolveInside(PHOTOS_DIR, student.photo_filename));
       removeFileIfExists(resolveInside(cohortExportDir, student.front_filename));
       removeFileIfExists(resolveInside(cohortExportDir, student.back_filename));
+      removeStudentThumbnails(student.ic_number);
     });
 
     fs.mkdirSync(PHOTOS_DIR, { recursive: true });
@@ -966,6 +1001,7 @@ app.delete('/api/exports/records/:icNumber', (req, res) => {
   removeFileIfExists(photoPath);
   removeFileIfExists(frontPath);
   removeFileIfExists(backPath);
+  removeStudentThumbnails(icNumber);
 
   db.prepare('DELETE FROM students WHERE ic_number = ?').run(icNumber);
 
@@ -1079,6 +1115,40 @@ app.get('/api/students/:icNumber/card/:side', (req, res) => {
   res.sendFile(cardPath);
 });
 
+app.get('/api/students/:icNumber/card/:side/thumbnail', async (req, res) => {
+  const icNumber = String(req.params.icNumber || '').trim();
+  const side = String(req.params.side || '').trim();
+
+  if (!VALID_IC_PATTERN.test(icNumber)) {
+    res.status(400).json({ error: 'Invalid IC number format.' });
+    return;
+  }
+
+  if (side !== 'front' && side !== 'back') {
+    res.status(400).json({ error: 'Side must be front or back.' });
+    return;
+  }
+
+  const student = getStudent(icNumber);
+  if (!student) {
+    res.status(404).json({ error: 'Student not found.' });
+    return;
+  }
+
+  try {
+    const thumbnailPath = await getCardThumbnailPath(student, side);
+    if (!thumbnailPath || !fs.existsSync(thumbnailPath)) {
+      res.status(404).json({ error: 'Card image not found.' });
+      return;
+    }
+
+    res.setHeader('Cache-Control', 'public, max-age=86400');
+    res.sendFile(thumbnailPath);
+  } catch (error) {
+    res.status(500).json({ error: 'Could not create thumbnail.' });
+  }
+});
+
 app.get('/api/students/records/cohort', (req, res) => {
   const { program, sesi } = getProgramSesi(req.query);
   const students = getStudents(program, sesi);
@@ -1161,6 +1231,7 @@ app.post('/api/students', upload.fields([
 
     writeFileEnsured(path.join(cohortExportDir, frontFilename), front.buffer);
     writeFileEnsured(path.join(cohortExportDir, backFilename), back.buffer);
+    removeStudentThumbnails(icNumber);
 
     const now = new Date().toISOString();
     db.prepare(`
