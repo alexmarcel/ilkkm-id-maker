@@ -96,6 +96,7 @@ const state = {
   saveInProgress: false,
   fontReady: false,
   fontError: false,
+  acceptingResponse: false,
 };
 
 const elements = {
@@ -256,7 +257,8 @@ function isValidMatrix(value) {
 function isReady() {
   const data = getFormData();
   return Boolean(
-    state.fontReady
+    !state.acceptingResponse
+    && state.fontReady
     && state.uploadedPhoto
     && data.name
     && isValidMatrix(data.matrix)
@@ -269,8 +271,20 @@ function hasIcValue() {
 }
 
 function updateFieldAvailability() {
+  if (state.acceptingResponse) {
+    elements.icInput.disabled = true;
+    elements.photoInput.disabled = true;
+    elements.nameInput.disabled = true;
+    elements.matrixInput.disabled = true;
+    elements.uploadButton.classList.add('disabled');
+    elements.uploadButton.setAttribute('aria-disabled', 'true');
+    elements.uploadButton.tabIndex = -1;
+    return;
+  }
+
   const enabled = isValidIc(getFormData().ic);
 
+  elements.icInput.disabled = false;
   elements.photoInput.disabled = !enabled;
   elements.nameInput.disabled = !enabled;
   elements.matrixInput.disabled = !enabled;
@@ -298,6 +312,13 @@ function updateStatus() {
   elements.downloadFrontPreview.disabled = !ready;
   elements.downloadBackPreview.disabled = !ready;
   elements.saveStudent.disabled = !ready || state.saveInProgress;
+
+  if (state.acceptingResponse) {
+    elements.icInput.setCustomValidity('');
+    elements.matrixInput.setCustomValidity('');
+    setSaveStatus('Form is not accepting responses. Please contact admin.');
+    return;
+  }
 
   if (data.ic && !isValidIc(data.ic)) {
     elements.icInput.setCustomValidity('Use IC format 860108-49-5026.');
@@ -954,6 +975,10 @@ function scheduleStudentLookup() {
 
 async function saveStudent() {
   if (!isReady() || state.saveInProgress) {
+    if (state.acceptingResponse) {
+      setSaveStatus('Form is not accepting responses. Please contact admin.');
+    }
+
     if (state.fontError) {
       setSaveStatus('Card font failed to load. Save and download are disabled.', 'error');
     }
@@ -1011,11 +1036,26 @@ async function saveStudent() {
   }
 }
 
+async function loadAcceptingResponseSetting() {
+  try {
+    const response = await fetch('/api/settings/accepting-response');
+    if (!response.ok) {
+      throw new Error('Setting request failed.');
+    }
+
+    const result = await response.json();
+    state.acceptingResponse = Boolean(result.acceptingResponse);
+  } catch (error) {
+    state.acceptingResponse = false;
+  }
+}
+
 async function init() {
   if (window.lucide) {
     window.lucide.createIcons();
   }
 
+  await loadAcceptingResponseSetting();
   await loadCardFont();
 
   try {

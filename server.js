@@ -129,7 +129,32 @@ db.exec(`
 
   CREATE INDEX IF NOT EXISTS idx_students_program_sesi
     ON students (program, sesi);
+
+  CREATE TABLE IF NOT EXISTS settings (
+    key TEXT PRIMARY KEY,
+    value TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+  );
 `);
+
+function getSetting(key, fallback = '') {
+  const row = db.prepare('SELECT value FROM settings WHERE key = ?').get(key);
+  return row ? row.value : fallback;
+}
+
+function setSetting(key, value) {
+  db.prepare(`
+    INSERT INTO settings (key, value, updated_at)
+    VALUES (?, ?, ?)
+    ON CONFLICT(key) DO UPDATE SET
+      value = excluded.value,
+      updated_at = excluded.updated_at
+  `).run(key, value, new Date().toISOString());
+}
+
+function isResponseClosed() {
+  return getSetting('accepting_response_closed', 'false') === 'true';
+}
 
 function getProgramSesi(query) {
   return {
@@ -876,6 +901,21 @@ app.get('/exports', (req, res) => {
   res.sendFile(path.join(ROOT_DIR, 'exports.html'));
 });
 
+app.get('/api/settings/accepting-response', (req, res) => {
+  res.json({
+    acceptingResponse: isResponseClosed(),
+  });
+});
+
+app.post('/api/exports/settings/accepting-response', express.json(), (req, res) => {
+  const acceptingResponse = Boolean(req.body?.acceptingResponse);
+  setSetting('accepting_response_closed', acceptingResponse ? 'true' : 'false');
+
+  res.json({
+    acceptingResponse,
+  });
+});
+
 app.get('/api/exports/count', (req, res) => {
   const { program, sesi } = getProgramSesi(req.query);
   const row = db.prepare(`
@@ -1172,6 +1212,11 @@ app.post('/api/students', upload.fields([
   { name: 'back', maxCount: 1 },
 ]), (req, res) => {
   try {
+    if (isResponseClosed()) {
+      res.status(403).json({ error: 'Form is not accepting responses. Please contact admin.' });
+      return;
+    }
+
     const icNumber = String(req.body.icNumber || '').trim();
     const name = String(req.body.name || '').trim().toUpperCase();
     const matrixNumber = String(req.body.matrixNumber || '').trim().toUpperCase();

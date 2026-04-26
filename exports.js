@@ -4,6 +4,7 @@ const DEFAULT_SESI = 'SESI JANUARI 2026 - DISEMBER 2028';
 const elements = {
   program: document.querySelector('#exportProgram'),
   sesi: document.querySelector('#exportSesi'),
+  acceptingResponseToggle: document.querySelector('#acceptingResponseToggle'),
   count: document.querySelector('#exportCount'),
   recordsTableBody: document.querySelector('#recordsTableBody'),
   downloadZip: document.querySelector('#downloadZip'),
@@ -197,6 +198,49 @@ async function refreshCount() {
     renderRecords(data.records || []);
   } catch (error) {
     setError('Could not load matching records.');
+  }
+}
+
+async function loadAcceptingResponseSetting() {
+  try {
+    const response = await fetch('/api/settings/accepting-response');
+    if (!response.ok) {
+      throw new Error('Setting request failed.');
+    }
+
+    const result = await response.json();
+    elements.acceptingResponseToggle.checked = Boolean(result.acceptingResponse);
+  } catch (error) {
+    setStatus('Could not load response setting.', 'error');
+  }
+}
+
+async function updateAcceptingResponseSetting() {
+  const acceptingResponse = elements.acceptingResponseToggle.checked;
+  elements.acceptingResponseToggle.disabled = true;
+  setStatus('Saving response setting...');
+
+  try {
+    const response = await fetch('/api/exports/settings/accepting-response', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ acceptingResponse }),
+    });
+    const result = await response.json().catch(() => ({}));
+
+    if (!response.ok) {
+      throw new Error(result.error || 'Could not save response setting.');
+    }
+
+    elements.acceptingResponseToggle.checked = Boolean(result.acceptingResponse);
+    setStatus('Response setting saved.', 'ready');
+  } catch (error) {
+    elements.acceptingResponseToggle.checked = !acceptingResponse;
+    setStatus(error.message || 'Could not save response setting.', 'error');
+  } finally {
+    elements.acceptingResponseToggle.disabled = false;
   }
 }
 
@@ -653,6 +697,7 @@ refreshIcons();
 
 elements.program.addEventListener('input', scheduleCountRefresh);
 elements.sesi.addEventListener('input', scheduleCountRefresh);
+elements.acceptingResponseToggle.addEventListener('change', updateAcceptingResponseSetting);
 elements.downloadZip.addEventListener('click', downloadZip);
 elements.backupDataset.addEventListener('click', showBackupModal);
 elements.regenerateCards.addEventListener('click', showRegenerateModal);
@@ -699,4 +744,5 @@ document.addEventListener('keydown', (event) => {
   }
 });
 
+loadAcceptingResponseSetting();
 refreshCount();
