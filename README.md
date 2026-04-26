@@ -1,6 +1,7 @@
 # ILKKM ID Card Generator
 
-Browser-based student ID card generator with a Node/SQLite backend for saving records, photos, generated card images, and cohort exports.
+Browser-based student ID card generator with a Node/SQLite backend for saving records, photos, generated card images, and cohort exports.<img width="3780" height="1512" alt="snapshot" src="https://github.com/user-attachments/assets/38e5cc9f-5066-4e90-b464-fe01acbcf808" />
+
 
 ## Features
 
@@ -31,7 +32,7 @@ The Exports page and export APIs use HTTP Basic Auth.
 Default credentials:
 
 - Username: `admin`
-- Password: `ilkkm2026`
+- Password: your default password
 
 Change them with:
 
@@ -113,7 +114,7 @@ https://github.com/alexmarcel/ilkkm-id-maker.git#main
 Default Traefik host:
 
 ```text
-id.alexmarcel.com
+id.YOURHOST.com
 ```
 
 Add the service from `docker-compose.yml` into your existing Traefik compose file and add this volume:
