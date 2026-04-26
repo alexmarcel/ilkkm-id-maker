@@ -5,7 +5,14 @@ const elements = {
   status: document.querySelector('#gridStatus'),
   grid: document.querySelector('#cardGrid'),
   printGrid: document.querySelector('#printGrid'),
+  printModal: document.querySelector('#printModal'),
+  printSummary: document.querySelector('#printSummary'),
+  closePrintModal: document.querySelector('#closePrintModal'),
+  cancelPrintDownload: document.querySelector('#cancelPrintDownload'),
+  confirmPrintDownload: document.querySelector('#confirmPrintDownload'),
 };
+
+let currentRecords = [];
 
 function buildQuery(params) {
   const query = new URLSearchParams();
@@ -33,6 +40,7 @@ function renderMessage(message) {
 }
 
 function renderCards(records) {
+  currentRecords = records;
   elements.grid.innerHTML = '';
 
   if (records.length === 0) {
@@ -73,6 +81,40 @@ function renderCards(records) {
   });
 }
 
+function addSummaryRow(label, value) {
+  const row = document.createElement('div');
+  const labelElement = document.createElement('span');
+  const valueElement = document.createElement('span');
+  row.className = 'summary-row';
+  labelElement.textContent = label;
+  valueElement.textContent = value;
+  row.append(labelElement, valueElement);
+  elements.printSummary.append(row);
+}
+
+function openPrintModal() {
+  const totalFiles = currentRecords.length * 2;
+  elements.printSummary.innerHTML = '';
+  addSummaryRow('Program', DEFAULT_PROGRAM);
+  addSummaryRow('Sesi', DEFAULT_SESI);
+  addSummaryRow('Students', currentRecords.length);
+  addSummaryRow('Front JPGs', currentRecords.length);
+  addSummaryRow('Back JPGs', currentRecords.length);
+  addSummaryRow('Total JPG files', totalFiles);
+  elements.confirmPrintDownload.disabled = currentRecords.length === 0;
+  elements.printModal.hidden = false;
+  document.body.classList.add('modal-open');
+
+  if (window.lucide) {
+    window.lucide.createIcons();
+  }
+}
+
+function closePrintModal() {
+  elements.printModal.hidden = true;
+  document.body.classList.remove('modal-open');
+}
+
 async function loadGrid() {
   setStatus('Loading cards...');
   renderMessage('Loading cards...');
@@ -102,6 +144,10 @@ if (window.lucide) {
 }
 
 elements.printGrid.addEventListener('click', () => {
+  openPrintModal();
+});
+
+elements.confirmPrintDownload.addEventListener('click', () => {
   setStatus('Preparing ZIP...', 'ready');
   window.location.href = `/api/exports/cards.zip?${buildQuery({
     program: DEFAULT_PROGRAM,
@@ -110,7 +156,20 @@ elements.printGrid.addEventListener('click', () => {
 
   window.setTimeout(() => {
     setStatus('Download started.', 'ready');
+    closePrintModal();
   }, 900);
+});
+elements.closePrintModal.addEventListener('click', closePrintModal);
+elements.cancelPrintDownload.addEventListener('click', closePrintModal);
+elements.printModal.addEventListener('click', (event) => {
+  if (event.target === elements.printModal) {
+    closePrintModal();
+  }
+});
+document.addEventListener('keydown', (event) => {
+  if (event.key === 'Escape' && !elements.printModal.hidden) {
+    closePrintModal();
+  }
 });
 
 loadGrid();

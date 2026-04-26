@@ -31,6 +31,26 @@
 
         <div class="card-grid" id="cardGrid" aria-label="Generated front cards"></div>
       </section>
+
+      <div class="modal-overlay" id="printModal" hidden>
+        <div class="modal-dialog dataset-dialog" role="dialog" aria-modal="true" aria-labelledby="printModalTitle">
+          <div class="modal-header">
+            <h2 id="printModalTitle">DOWNLOAD ALL FOR PRINTING</h2>
+            <button class="icon-button" id="closePrintModal" type="button" aria-label="Close download confirmation">
+              <i data-lucide="x" aria-hidden="true"></i>
+            </button>
+          </div>
+          <div class="dataset-summary" id="printSummary"></div>
+          <p class="dataset-warning" id="printWarning">The ZIP will contain each student in their own IC-number folder with front and back JPG files.</p>
+          <div class="modal-actions">
+            <button class="secondary-action" id="cancelPrintDownload" type="button">Cancel</button>
+            <button class="primary-action" id="confirmPrintDownload" type="button">
+              <i data-lucide="package-down" aria-hidden="true"></i>
+              <span>Download ZIP</span>
+            </button>
+          </div>
+        </div>
+      </div>
     </main>
 
     <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
