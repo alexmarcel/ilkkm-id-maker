@@ -1,6 +1,11 @@
 # ILKKM ID Card Generator
 
 Browser-based student ID card generator with a Node/SQLite backend for saving records, photos, generated card images, and cohort exports.
+<img width="1080" height="2010" alt="Screenshot_2026-04-26-15-16-29-950_com android chrome" src="https://github.com/user-attachments/assets/0610914f-ede7-4576-a18d-71f25d87a692" />
+<img width="1080" height="2165" alt="Screenshot_2026-04-26-15-16-34-834_com android chrome" src="https://github.com/user-attachments/assets/72d7f505-85d3-4a4a-bd52-9345919dd8b2" />
+<img width="1080" height="2170" alt="Screenshot_2026-04-26-15-16-44-394_com android chrome" src="https://github.com/user-attachments/assets/21c9e94a-dbb4-42c7-881c-bf2f1c7ef727" />
+<img width="1080" height="1999" alt="Screenshot_2026-04-26-15-17-00-991_com android chrome" src="https://github.com/user-attachments/assets/cdeac822-f497-4663-ac40-2a12735d8bbf" />
+<img width="1080" height="2010" alt="Screenshot_2026-04-26-15-16-47-670_com android chrome" src="https://github.com/user-attachments/assets/e3d8d5cf-4e4f-432e-8f09-fb29fb488d8b" />
 
 ## Features
 
@@ -113,7 +118,7 @@ https://github.com/alexmarcel/ilkkm-id-maker.git#main
 Default Traefik host:
 
 ```text
-id.alexmarcel.com
+id.YOURHOST.com
 ```
 
 Add the service from `docker-compose.yml` into your existing Traefik compose file and add this volume:
