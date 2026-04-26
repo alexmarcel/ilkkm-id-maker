@@ -32,7 +32,7 @@ The Exports page and export APIs use HTTP Basic Auth.
 Default credentials:
 
 - Username: `admin`
-- Password: `ilkkm2026`
+- Password: your default password
 
 Change them with:
 
