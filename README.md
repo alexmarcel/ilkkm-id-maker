@@ -1,6 +1,8 @@
 # ILKKM ID Card Generator
 
-Browser-based student ID card generator with a Node/SQLite backend for saving records, photos, generated card images, and cohort exports.<img width="3780" height="1512" alt="snapshot" src="https://github.com/user-attachments/assets/38e5cc9f-5066-4e90-b464-fe01acbcf808" />
+Browser-based student ID card generator with a Node/SQLite backend for saving records, photos, generated card images, and cohort exports.
+
+<img width="3780" height="1512" alt="snapshot" src="https://github.com/user-attachments/assets/38e5cc9f-5066-4e90-b464-fe01acbcf808" />
 
 
 ## Features
