@@ -15,7 +15,10 @@ Browser-based student ID card generator with a Node/SQLite backend for saving re
 - Photo upload accepts JPG/PNG, center-crops to the card portrait ratio, compresses to JPG in the browser, and saves under `1MB`.
 - Generated card text uses bundled Liberation Sans Bold so front/back JPGs keep the same font across devices.
 - Saved Records table on the main page shows cohort records with saved status.
-- Protected Exports page lists records, previews front/back cards in modals, deletes rows, and downloads all cards as a ZIP.
+- Grid Preview shows the current cohort in a responsive card grid with front/back flip preview.
+- Grid thumbnails are generated at `720px` wide and cached for faster loading.
+- Protected Exports page lists records, previews front/back cards in modals, deletes rows, controls response status, and downloads all cards as a ZIP.
+- When responses are closed, the generator disables the form and shows a centered overlay on the card preview.
 
 ## Running Locally
 
@@ -27,6 +30,7 @@ npm start
 Open:
 
 - Generator: `http://localhost:3000/`
+- Grid Preview: `http://localhost:3000/grid`
 - Exports: `http://localhost:3000/exports`
 
 The Exports page and export APIs use HTTP Basic Auth.
@@ -70,6 +74,7 @@ The Exports page supports:
 - ZIP download of all generated cards for the selected Program/Sesi.
 - Cohort dataset backup and restore with confirmation summaries.
 - Cohort and per-row card regeneration from saved records/photos.
+- Accepting response setting to open or close the main generator form.
 
 ZIP structure:
 
@@ -102,6 +107,36 @@ Use:
 - The row refresh icon to regenerate one student.
 
 If a saved photo is missing, that record is skipped and reported instead of stopping the whole cohort job.
+
+## Grid Preview
+
+The Grid Preview page displays saved cards for the current Program/Sesi in a visual grid.
+
+- Desktop uses 5 columns.
+- Mobile uses 3 columns.
+- Cards initially load only front thumbnails.
+- Back thumbnails load on first card flip.
+- Clicking a card flips between front and back.
+- `Download All for Printing` opens a confirmation modal, then downloads the same full-size ZIP structure used by Exports.
+
+Thumbnails are served from:
+
+```text
+/api/students/{icNumber}/card/{front|back}/thumbnail
+```
+
+Generated thumbnails are cached in `/data/thumbnails`. They are invalidated when a student is saved, cards are regenerated, a record is deleted, or a cohort restore replaces files. Full-size JPGs remain the source of truth for printing and ZIP exports.
+
+## Accepting Responses
+
+The Exports page has an `Accepting response` switch for the main generator.
+
+When responses are closed:
+
+- IC number, photo upload, name, matrix number, and save are disabled.
+- The status label tells users the form is not accepting responses.
+- The card preview shows a centered overlay with a lock icon and admin contact message.
+- The backend rejects save requests as a final safety gate.
 
 ## Docker / Traefik
 
@@ -140,6 +175,7 @@ Persistent app data is mounted at `/data` inside the container.
 - `server.js` - Express server, SQLite schema, save/export/delete APIs.
 - `index.html` / `app.js` - Main generator UI and canvas rendering.
 - `exports.html` / `exports.js` - Protected exports UI.
+- `grid.html` / `grid.js` - Cohort grid preview UI.
 - `styles.css` - Shared responsive UI styles.
 - `front.jpg` / `back.jpg` - Blank card templates.
 - `icon.jpg` - Header icon.
