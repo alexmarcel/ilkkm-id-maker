@@ -1213,7 +1213,7 @@ app.post('/api/students', upload.fields([
 ]), (req, res) => {
   try {
     if (isResponseClosed()) {
-      res.status(403).json({ error: 'Form is not accepting responses. Please contact admin.' });
+      res.status(403).json({ error: 'Responses closed. Please contact admin.' });
       return;
     }
 

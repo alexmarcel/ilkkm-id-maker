@@ -316,7 +316,7 @@ function updateStatus() {
   if (state.acceptingResponse) {
     elements.icInput.setCustomValidity('');
     elements.matrixInput.setCustomValidity('');
-    setSaveStatus('Form is not accepting responses. Please contact admin.');
+    setSaveStatus('Responses closed. Please contact admin.');
     return;
   }
 
@@ -976,7 +976,7 @@ function scheduleStudentLookup() {
 async function saveStudent() {
   if (!isReady() || state.saveInProgress) {
     if (state.acceptingResponse) {
-      setSaveStatus('Form is not accepting responses. Please contact admin.');
+      setSaveStatus('Responses closed. Please contact admin.');
     }
 
     if (state.fontError) {
