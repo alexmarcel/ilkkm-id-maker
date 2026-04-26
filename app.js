@@ -121,6 +121,7 @@ const elements = {
   backTab: document.querySelector('#backTab'),
   frontCanvas: document.querySelector('#frontCanvas'),
   backCanvas: document.querySelector('#backCanvas'),
+  previewClosedOverlay: document.querySelector('#previewClosedOverlay'),
 };
 
 const frontContext = elements.frontCanvas.getContext('2d');
@@ -293,6 +294,10 @@ function updateFieldAvailability() {
   elements.uploadButton.tabIndex = enabled ? 0 : -1;
 }
 
+function updateClosedOverlay() {
+  elements.previewClosedOverlay.hidden = !state.acceptingResponse;
+}
+
 function clearStudentFields() {
   state.uploadedPhoto = null;
   state.uploadedPhotoFile = null;
@@ -308,6 +313,7 @@ function clearStudentFields() {
 function updateStatus() {
   const data = getFormData();
   updateFieldAvailability();
+  updateClosedOverlay();
   const ready = isReady();
   elements.downloadFrontPreview.disabled = !ready;
   elements.downloadBackPreview.disabled = !ready;
