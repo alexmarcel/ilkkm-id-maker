@@ -8,6 +8,8 @@ const ALLOWED_PHOTO_TYPES = new Set(['image/jpeg', 'image/png']);
 const MATRIX_PATTERN = /^[A-Z]{4} \d\/\d{4}\(\d{2}\)-\d{4}$/;
 const PHOTO_JPEG_TYPE = 'image/jpeg';
 const PHOTO_JPEG_EXTENSION = '.jpg';
+const CARD_FONT_FAMILY = 'IDCardFont';
+const CARD_FONT_STACK = `"${CARD_FONT_FAMILY}", sans-serif`;
 const PHOTO_COMPRESSION = {
   startQuality: 0.9,
   minQuality: 0.65,
@@ -92,6 +94,8 @@ const state = {
   lookupTimer: null,
   lookupController: null,
   saveInProgress: false,
+  fontReady: false,
+  fontError: false,
 };
 
 const elements = {
@@ -251,7 +255,13 @@ function isValidMatrix(value) {
 
 function isReady() {
   const data = getFormData();
-  return Boolean(state.uploadedPhoto && data.name && isValidMatrix(data.matrix) && isValidIc(data.ic));
+  return Boolean(
+    state.fontReady
+    && state.uploadedPhoto
+    && data.name
+    && isValidMatrix(data.matrix)
+    && isValidIc(data.ic)
+  );
 }
 
 function hasIcValue() {
@@ -299,6 +309,10 @@ function updateStatus() {
     elements.matrixInput.setCustomValidity('Use matrix format ABCD 1/1111(11)-1111.');
   } else {
     elements.matrixInput.setCustomValidity('');
+  }
+
+  if (state.fontError) {
+    setSaveStatus('Card font failed to load. Save and download are disabled.', 'error');
   }
 }
 
@@ -350,6 +364,35 @@ function setPhotoStatus(message, type = '') {
   setStatusIcon(iconElement, type);
 }
 
+async function loadCardFont() {
+  if (!document.fonts || typeof document.fonts.load !== 'function') {
+    state.fontReady = true;
+    return;
+  }
+
+  setSaveStatus('Loading card font...', 'loading');
+
+  try {
+    await document.fonts.load(`700 72px "${CARD_FONT_FAMILY}"`);
+    await document.fonts.ready;
+
+    const isLoaded = document.fonts.check(`700 72px "${CARD_FONT_FAMILY}"`);
+    if (!isLoaded) {
+      throw new Error('Card font did not load.');
+    }
+
+    state.fontReady = true;
+    state.fontError = false;
+    setSaveStatus('Enter a valid IC number to check saved data.');
+  } catch (error) {
+    state.fontReady = false;
+    state.fontError = true;
+    setSaveStatus('Card font failed to load. Save and download are disabled.', 'error');
+  }
+
+  updateStatus();
+}
+
 function setStatusIcon(iconElement, type = '') {
   if (!iconElement) {
     return;
@@ -371,7 +414,7 @@ function setStatusIcon(iconElement, type = '') {
 }
 
 function prepareText(context, fontSize) {
-  context.font = `700 ${fontSize}px Arial, Helvetica, sans-serif`;
+  context.font = `700 ${fontSize}px ${CARD_FONT_STACK}`;
   context.fillStyle = '#000';
   context.textBaseline = 'alphabetic';
 }
@@ -577,6 +620,10 @@ function markDirty() {
 }
 
 function renderActivePreview() {
+  if (!state.fontReady) {
+    return;
+  }
+
   if (state.activeSide === 'front') {
     renderFront();
   } else {
@@ -642,6 +689,11 @@ function getRenderedBlob(side) {
 }
 
 async function downloadRenderedSide(side) {
+  if (!state.fontReady) {
+    setSaveStatus('Card font failed to load. Save and download are disabled.', 'error');
+    return;
+  }
+
   const blob = await getRenderedBlob(side);
   downloadBlob(blob, getFilename(side));
 }
@@ -902,6 +954,10 @@ function scheduleStudentLookup() {
 
 async function saveStudent() {
   if (!isReady() || state.saveInProgress) {
+    if (state.fontError) {
+      setSaveStatus('Card font failed to load. Save and download are disabled.', 'error');
+    }
+
     return;
   }
 
@@ -959,6 +1015,8 @@ async function init() {
   if (window.lucide) {
     window.lucide.createIcons();
   }
+
+  await loadCardFont();
 
   try {
     const [frontTemplate, backTemplate] = await Promise.all([

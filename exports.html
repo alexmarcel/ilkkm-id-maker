@@ -34,10 +34,25 @@
 
           <p class="export-count" id="exportCount" role="status">Loading records...</p>
 
-          <button class="primary-action" id="downloadZip" type="button" disabled>
-            <i data-lucide="package-down" aria-hidden="true"></i>
-            <span>Download ZIP</span>
-          </button>
+          <div class="export-actions">
+            <button class="primary-action" id="downloadZip" type="button" disabled>
+              <i data-lucide="package-down" aria-hidden="true"></i>
+              <span>Download ZIP</span>
+            </button>
+            <button class="secondary-action" id="backupDataset" type="button" disabled>
+              <i data-lucide="database-backup" aria-hidden="true"></i>
+              <span>Backup Dataset</span>
+            </button>
+            <button class="secondary-action danger-action" id="restoreDataset" type="button">
+              <i data-lucide="database-zap" aria-hidden="true"></i>
+              <span>Restore Dataset</span>
+            </button>
+            <button class="secondary-action" id="regenerateCards" type="button" disabled>
+              <i data-lucide="refresh-cw" aria-hidden="true"></i>
+              <span>Regenerate Cards</span>
+            </button>
+            <input id="restoreDatasetInput" type="file" accept=".zip,application/zip,application/x-zip-compressed" hidden>
+          </div>
 
           <div class="records-table-wrap">
             <table class="records-table" aria-label="Matching student records">
@@ -70,6 +85,35 @@
           </div>
           <div class="modal-body">
             <img id="cardModalImage" alt="">
+          </div>
+        </div>
+      </div>
+
+      <div class="modal-overlay" id="datasetModal" hidden>
+        <div class="modal-dialog dataset-dialog" role="dialog" aria-modal="true" aria-labelledby="datasetModalTitle">
+          <div class="modal-header">
+            <h2 id="datasetModalTitle">DATASET</h2>
+            <button class="icon-button" id="closeDatasetModal" type="button" aria-label="Close dataset confirmation">
+              <i data-lucide="x" aria-hidden="true"></i>
+            </button>
+          </div>
+          <div class="dataset-summary" id="datasetSummary"></div>
+          <p class="dataset-warning" id="datasetWarning" hidden></p>
+          <div class="dataset-progress" id="datasetProgress" hidden>
+            <div class="dataset-progress-header">
+              <span id="datasetProgressLabel">Preparing...</span>
+              <span id="datasetProgressCount">0 / 0</span>
+            </div>
+            <div class="dataset-progress-track" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+              <span id="datasetProgressBar"></span>
+            </div>
+          </div>
+          <div class="modal-actions">
+            <button class="secondary-action" id="cancelDatasetAction" type="button">Cancel</button>
+            <button class="primary-action" id="confirmDatasetAction" type="button">
+              <i data-lucide="check" aria-hidden="true"></i>
+              <span>Confirm</span>
+            </button>
           </div>
         </div>
       </div>

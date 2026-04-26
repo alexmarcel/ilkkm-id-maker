@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Grid Preview - ILKKM ID Card Maker</title>
+    <link rel="stylesheet" href="styles.css">
+  </head>
+  <body>
+    <main class="app-shell">
+      <section class="grid-shell" aria-label="Current cohort card grid">
+        <div class="grid-page-header">
+          <div class="grid-header-row">
+            <div class="heading">
+              <h5 class="eyebrow">
+                <img class="brand-icon" src="icon.jpg" alt="" aria-hidden="true">
+                <span>GRID PREVIEW</span>
+              </h5>
+              <a class="secondary-link inline-link" href="/">
+                <i data-lucide="arrow-left" aria-hidden="true"></i>
+                <span>BACK TO GENERATOR</span>
+              </a>
+            </div>
+            <button class="primary-action grid-print-button" id="printGrid" type="button">
+              <i data-lucide="printer" aria-hidden="true"></i>
+              <span>Download All for Printing</span>
+            </button>
+          </div>
+          <p class="export-count" id="gridStatus" role="status">Loading cards...</p>
+        </div>
+
+        <div class="card-grid" id="cardGrid" aria-label="Generated front cards"></div>
+      </section>
+    </main>
+
+    <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
+    <script src="grid.js"></script>
+  </body>
+</html>

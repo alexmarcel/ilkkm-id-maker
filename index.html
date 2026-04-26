@@ -108,9 +108,15 @@
       <section class="records-card" aria-label="Saved cohort records">
         <div class="records-card-header">
           <h2>Saved Records</h2>
-          <button class="icon-button" id="refreshRecords" type="button" aria-label="Refresh saved records">
-            <i data-lucide="refresh-cw" aria-hidden="true"></i>
-          </button>
+          <div class="records-header-actions">
+            <a class="secondary-action grid-preview-link" href="/grid">
+              <i data-lucide="layout-grid" aria-hidden="true"></i>
+              <span>Grid Preview</span>
+            </a>
+            <button class="icon-button" id="refreshRecords" type="button" aria-label="Refresh saved records">
+              <i data-lucide="refresh-cw" aria-hidden="true"></i>
+            </button>
+          </div>
         </div>
         <div class="records-table-wrap">
           <table class="records-table" aria-label="Saved records for this cohort">
