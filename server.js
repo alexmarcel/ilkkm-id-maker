@@ -1245,7 +1245,7 @@ app.get('/api/cohorts/:slug/icon', (req, res) => {
 
 app.get('/api/game/cards', (req, res) => {
   const students = db.prepare(`
-    SELECT students.ic_number, students.name, students.front_filename, students.back_filename, cohorts.slug AS cohort_slug
+    SELECT students.ic_number, students.name, students.front_filename, cohorts.slug AS cohort_slug
     FROM students
     INNER JOIN cohorts ON cohorts.id = students.cohort_id
     ORDER BY students.updated_at DESC, students.name COLLATE NOCASE
@@ -1255,8 +1255,7 @@ app.get('/api/game/cards', (req, res) => {
     .filter((student) => {
       const cohortExportDir = path.join(EXPORTS_DIR, student.cohort_slug);
       const frontPath = resolveInside(cohortExportDir, student.front_filename);
-      const backPath = resolveInside(cohortExportDir, student.back_filename);
-      return frontPath && backPath && fs.existsSync(frontPath) && fs.existsSync(backPath);
+      return frontPath && fs.existsSync(frontPath);
     })
     .map((student) => {
       const cohortSlug = student.cohort_slug;
@@ -1266,7 +1265,6 @@ app.get('/api/game/cards', (req, res) => {
         icNumber: student.ic_number,
         cohortSlug,
         frontThumbnailUrl: `/api/students/${encodeURIComponent(student.ic_number)}/card/front/thumbnail?${query}`,
-        backThumbnailUrl: `/api/students/${encodeURIComponent(student.ic_number)}/card/back/thumbnail?${query}`,
       };
     });
 
@@ -1310,7 +1308,7 @@ app.post('/api/game/scores', express.json(), (req, res) => {
     return;
   }
 
-  if (!Number.isInteger(pairs) || pairs < 2 || pairs > 8) {
+  if (!Number.isInteger(pairs) || pairs < 2 || pairs > 9) {
     res.status(400).json({ error: 'Invalid pair count.' });
     return;
   }
@@ -1437,12 +1435,12 @@ app.patch('/api/exports/cohorts/:slug', cohortIconUpload.single('icon'), async (
 
     const updated = getCohortBySlug(newSlug);
     const students = getStudentsByCohort(updated);
-    const regeneration = students.length ? await regenerateStudents(students) : null;
+    const needsRegeneration = normalized.program !== cohort.program || normalized.sesi !== cohort.sesi;
     res.json({
       cohort: serializeCohort(updated, students.length),
       oldSlug,
       slugChanged,
-      regeneration,
+      needsRegeneration,
     });
   } catch (error) {
     res.status(400).json({ error: error.message || 'Could not update cohort.' });

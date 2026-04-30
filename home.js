@@ -21,6 +21,10 @@ let currentCohorts = [];
 let modalMode = 'create';
 let editingCohort = null;
 let removeIconRequested = false;
+let compressedIconFile = null;
+
+const ICON_OUTPUT_SIZE = 720;
+const ICON_QUALITY = 0.82;
 
 function refreshIcons() {
   if (window.lucide) {
@@ -40,14 +44,86 @@ function setModalStatus(message, type = '') {
   const messageElement = elements.modalStatus.querySelector('span');
   const iconElement = elements.modalStatus.querySelector('i, svg');
   messageElement.textContent = message;
-  elements.modalStatus.classList.remove('error', 'ready', 'loading');
+  elements.modalStatus.classList.remove('error', 'ready', 'loading', 'warning');
   if (type) {
     elements.modalStatus.classList.add(type);
   }
   if (iconElement) {
-    iconElement.setAttribute('data-lucide', type === 'error' ? 'circle-alert' : type === 'ready' ? 'circle-check' : 'info');
+    iconElement.setAttribute('data-lucide', type === 'error' ? 'circle-alert' : type === 'ready' ? 'circle-check' : type === 'warning' ? 'triangle-alert' : 'info');
   }
   refreshIcons();
+}
+
+function normalizeCohortText(value) {
+  return String(value || '').trim().toUpperCase();
+}
+
+function hasProgramSesiChanges() {
+  if (modalMode !== 'edit' || !editingCohort) {
+    return false;
+  }
+
+  return normalizeCohortText(elements.program.value) !== normalizeCohortText(editingCohort.program)
+    || normalizeCohortText(elements.sesi.value) !== normalizeCohortText(editingCohort.sesi);
+}
+
+function refreshCohortChangeWarning() {
+  if (hasProgramSesiChanges()) {
+    setModalStatus('Program or Sesi changed. Run Regenerate Cards from Exports after saving.', 'warning');
+    return;
+  }
+
+  setModalStatus(modalMode === 'edit' ? 'Update Program, Sesi, or replace the grid photo.' : 'Use the exports/admin login when prompted.');
+}
+
+function loadImageFromFile(file) {
+  return new Promise((resolve, reject) => {
+    const image = new Image();
+    const url = URL.createObjectURL(file);
+    image.onload = () => {
+      URL.revokeObjectURL(url);
+      resolve(image);
+    };
+    image.onerror = () => {
+      URL.revokeObjectURL(url);
+      reject(new Error('Could not read the selected photo.'));
+    };
+    image.src = url;
+  });
+}
+
+function canvasToBlob(canvas, quality) {
+  return new Promise((resolve, reject) => {
+    canvas.toBlob((blob) => {
+      if (blob) {
+        resolve(blob);
+      } else {
+        reject(new Error('Could not compress the selected photo.'));
+      }
+    }, 'image/jpeg', quality);
+  });
+}
+
+async function compressCohortIcon(file) {
+  const image = await loadImageFromFile(file);
+  const sourceSize = Math.min(image.naturalWidth, image.naturalHeight);
+  const sourceX = Math.max(0, Math.floor((image.naturalWidth - sourceSize) / 2));
+  const sourceY = Math.max(0, Math.floor((image.naturalHeight - sourceSize) / 2));
+  const canvas = document.createElement('canvas');
+  canvas.width = ICON_OUTPUT_SIZE;
+  canvas.height = ICON_OUTPUT_SIZE;
+  const context = canvas.getContext('2d', { alpha: false });
+  if (!context) {
+    throw new Error('Could not compress the selected photo.');
+  }
+
+  context.fillStyle = '#ffffff';
+  context.fillRect(0, 0, canvas.width, canvas.height);
+  context.drawImage(image, sourceX, sourceY, sourceSize, sourceSize, 0, 0, canvas.width, canvas.height);
+
+  const blob = await canvasToBlob(canvas, ICON_QUALITY);
+  const baseName = file.name.replace(/\.[^.]+$/, '') || 'cohort-photo';
+  return new File([blob], `${baseName}.jpg`, { type: 'image/jpeg', lastModified: Date.now() });
 }
 
 function renderMessage(message) {
@@ -123,6 +199,7 @@ function openModal(mode = 'create', cohort = null) {
   editingCohort = cohort;
   elements.form.reset();
   removeIconRequested = false;
+  compressedIconFile = null;
   elements.modalTitle.textContent = mode === 'edit' ? 'EDIT COHORT' : 'ADD COHORT';
   elements.program.value = cohort?.program || '';
   elements.sesi.value = cohort?.sesi || '';
@@ -164,7 +241,7 @@ async function saveCohort(event) {
 
   const program = elements.program.value.trim();
   const sesi = elements.sesi.value.trim();
-  const icon = elements.icon.files?.[0] || null;
+  const icon = compressedIconFile || elements.icon.files?.[0] || null;
   const accentColor = elements.color.value || '#0f8ea3';
   if (!program || !sesi) {
     setModalStatus('Program and sesi are required.', 'error');
@@ -227,20 +304,47 @@ elements.addCohort.addEventListener('click', () => {
 elements.closeModal.addEventListener('click', closeModal);
 elements.cancel.addEventListener('click', closeModal);
 elements.form.addEventListener('submit', saveCohort);
-elements.icon.addEventListener('change', () => {
+elements.program.addEventListener('input', refreshCohortChangeWarning);
+elements.sesi.addEventListener('input', refreshCohortChangeWarning);
+elements.icon.addEventListener('change', async () => {
   const file = elements.icon.files?.[0] || null;
-  elements.iconButtonText.textContent = file ? file.name : 'Add Photo';
+  compressedIconFile = null;
+  elements.iconButtonText.textContent = file ? file.name : modalMode === 'edit' ? 'Replace Photo' : 'Add Photo';
   if (file) {
+    if (!['image/jpeg', 'image/png'].includes(file.type)) {
+      elements.icon.value = '';
+      elements.iconButtonText.textContent = modalMode === 'edit' ? 'Replace Photo' : 'Add Photo';
+      setModalStatus('Photo must be a JPG or PNG image.', 'error');
+      return;
+    }
+
     removeIconRequested = false;
     elements.removeIcon.classList.remove('active');
+    setModalStatus('Compressing photo...');
+    try {
+      compressedIconFile = await compressCohortIcon(file);
+      elements.iconButtonText.textContent = compressedIconFile.name;
+      refreshCohortChangeWarning();
+    } catch (error) {
+      elements.icon.value = '';
+      elements.iconButtonText.textContent = modalMode === 'edit' ? 'Replace Photo' : 'Add Photo';
+      setModalStatus(error.message || 'Could not compress photo.', 'error');
+    }
+  } else {
+    refreshCohortChangeWarning();
   }
 });
 elements.removeIcon.addEventListener('click', () => {
   removeIconRequested = true;
   elements.icon.value = '';
+  compressedIconFile = null;
   elements.iconButtonText.textContent = 'Replace Photo';
   elements.removeIcon.classList.add('active');
-  setModalStatus('Photo will be removed when you save changes.', 'ready');
+  if (hasProgramSesiChanges()) {
+    refreshCohortChangeWarning();
+  } else {
+    setModalStatus('Photo will be removed when you save changes.', 'ready');
+  }
 });
 document.querySelector('label[for="newCohortIcon"]').addEventListener('keydown', (event) => {
   if (event.key === 'Enter' || event.key === ' ') {

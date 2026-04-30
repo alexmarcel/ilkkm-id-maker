@@ -590,6 +590,17 @@ h1 {
   stroke: var(--ready);
 }
 
+.save-status.warning {
+  border-color: rgba(180, 98, 6, 0.28);
+  color: #8a4b05;
+  background: rgba(255, 247, 237, 0.96);
+  font-weight: 700;
+}
+
+.save-status.warning svg {
+  stroke: #b46206;
+}
+
 .save-status.loading {
   border-color: rgba(15, 142, 163, 0.2);
   background: rgba(238, 249, 252, 0.94);
@@ -885,10 +896,29 @@ h1 {
   padding: 0 16px;
 }
 
+.cohort-icon-button {
+  width: 44px;
+  min-width: 44px;
+  padding: 0;
+  border-radius: 999px;
+}
+
 .cohort-header-actions {
   display: flex;
   align-items: center;
   gap: 10px;
+}
+
+.cohort-status-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.cohort-status-row .export-count {
+  min-width: 0;
+  margin: 0;
 }
 
 .cohort-grid {
@@ -1027,6 +1057,7 @@ h1 {
 .game-header,
 .game-rank-panel,
 .game-play {
+  width: 100%;
   border: 1px solid var(--line);
   border-radius: 14px;
   background: var(--panel);
@@ -1035,24 +1066,73 @@ h1 {
 }
 
 .game-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
+  display: grid;
   gap: 16px;
   margin-bottom: 14px;
   padding: 18px;
 }
 
-.game-start-button,
-.game-reset-button {
+.game-header[hidden] {
+  display: none;
+}
+
+.game-intro-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.game-rules {
+  display: grid;
+  gap: 10px;
+  max-width: 760px;
+  margin: 0 auto;
+  color: #274354;
+  text-align: center;
+  line-height: 1.45;
+}
+
+.game-rules p,
+.game-rules ul {
+  margin: 0;
+}
+
+.game-rules ul {
+  display: grid;
+  gap: 5px;
+  padding-left: 20px;
+}
+
+.game-start-row {
+  display: flex;
+  justify-content: center;
+}
+
+.game-start-button {
   width: auto;
   min-width: 160px;
   padding: 0 16px;
 }
 
+.game-start-button {
+  min-width: 240px;
+  min-height: 56px;
+  padding: 0 28px;
+  border-radius: 14px;
+  font-size: 18px;
+}
+
 .game-main {
   display: grid;
+  width: 100%;
   gap: 14px;
+}
+
+.game-shell.game-main {
+  width: min(1180px, 100%);
+  margin-right: auto;
+  margin-left: auto;
 }
 
 .game-rank-panel {
@@ -1071,7 +1151,7 @@ h1 {
 
 .game-stats {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr)) auto;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 10px;
   align-items: center;
 }
@@ -1134,7 +1214,6 @@ h1 {
 }
 
 .match-card-backface {
-  gap: 10px;
   align-content: center;
   justify-items: center;
   padding: 12px;
@@ -1145,16 +1224,17 @@ h1 {
 }
 
 .match-card-backface strong {
-  font-size: clamp(11px, 1.8vw, 18px);
-  line-height: 1.1;
+  display: grid;
+  place-items: center;
+  width: min(46%, 72px);
+  aspect-ratio: 1;
+  border: 3px solid rgba(13, 86, 101, 0.78);
+  border-radius: 999px;
+  color: #0d5665;
+  background: rgba(255, 255, 255, 0.72);
+  font-size: clamp(24px, 5vw, 48px);
+  line-height: 1;
   text-align: center;
-}
-
-.match-card-backface img {
-  width: min(42%, 54px);
-  height: auto;
-  border-radius: 8px;
-  opacity: 0.88;
 }
 
 .match-card-frontface {
@@ -1587,17 +1667,20 @@ h1 {
   }
 
   .cohort-header-actions,
-  .game-header {
+  .game-intro-row {
     display: grid;
     gap: 10px;
+  }
+
+  .cohort-status-row {
+    align-items: center;
   }
 
   .add-cohort-button {
     width: 100%;
   }
 
-  .game-start-button,
-  .game-reset-button {
+  .game-start-button {
     width: 100%;
   }
 

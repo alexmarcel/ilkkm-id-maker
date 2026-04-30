@@ -21,14 +21,15 @@
               <i data-lucide="gamepad-2" aria-hidden="true"></i>
               <span>Memory Game</span>
             </a>
-            <button class="secondary-action add-cohort-button" id="addCohort" type="button" style="display: none;">
-              <i data-lucide="plus" aria-hidden="true"></i>
-              <span>Add Cohort</span>
-            </button>
           </div>
         </div>
 
-        <p class="export-count" id="cohortStatus" role="status">Loading cohorts...</p>
+        <div class="cohort-status-row">
+          <p class="export-count" id="cohortStatus" role="status">Loading cohorts...</p>
+          <button class="secondary-action cohort-icon-button" id="addCohort" type="button" aria-label="Add Cohort" title="Add Cohort">
+            <i data-lucide="circle-plus" aria-hidden="true"></i>
+          </button>
+        </div>
         <div class="cohort-grid" id="cohortGrid" aria-label="Available cohorts"></div>
       </section>
 

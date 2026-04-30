@@ -1,9 +1,9 @@
-const MAX_PAIRS = 8;
+const MAX_PAIRS = 9;
 const MISMATCH_DELAY = 850;
 
 const elements = {
   startGame: document.querySelector('#startGame'),
-  newGame: document.querySelector('#newGame'),
+  gameHeader: document.querySelector('#gameHeader'),
   gameMain: document.querySelector('#gameMain'),
   gamePlay: document.querySelector('#gamePlay'),
   gameStatus: document.querySelector('#gameStatus'),
@@ -33,6 +33,7 @@ const state = {
   elapsedMs: 0,
   timerId: null,
   locked: false,
+  isPlaying: false,
 };
 
 function refreshIcons() {
@@ -129,16 +130,16 @@ function buildDeck() {
   state.pairs = selected.length;
   return shuffle(selected.flatMap((record) => [
     {
-      id: `${record.icNumber}-front`,
+      id: `${record.icNumber}-front-a`,
       matchKey: record.icNumber,
       imageUrl: record.frontThumbnailUrl,
-      alt: `Front card for ${record.name}`,
+      alt: `Card for ${record.name}`,
     },
     {
-      id: `${record.icNumber}-back`,
+      id: `${record.icNumber}-front-b`,
       matchKey: record.icNumber,
-      imageUrl: record.backThumbnailUrl,
-      alt: `Back card for ${record.name}`,
+      imageUrl: record.frontThumbnailUrl,
+      alt: `Card for ${record.name}`,
     },
   ]));
 }
@@ -171,7 +172,6 @@ function createCard(card) {
   const inner = document.createElement('span');
   const back = document.createElement('span');
   const label = document.createElement('strong');
-  const icon = document.createElement('img');
   const front = document.createElement('img');
 
   button.className = 'match-card';
@@ -181,15 +181,13 @@ function createCard(card) {
   button.setAttribute('aria-label', 'Face down match card');
   inner.className = 'match-card-inner';
   back.className = 'match-card-face match-card-backface';
-  label.textContent = 'MATCH CARD';
-  icon.src = '/icon.jpg';
-  icon.alt = '';
-  icon.setAttribute('aria-hidden', 'true');
+  label.textContent = '?';
+  label.setAttribute('aria-hidden', 'true');
   front.className = 'match-card-face match-card-frontface';
   front.src = card.imageUrl;
   front.alt = card.alt;
   front.loading = 'lazy';
-  back.append(label, icon);
+  back.append(label);
   inner.append(back, front);
   button.append(inner);
   button.addEventListener('click', () => flipCard(button));
@@ -214,12 +212,25 @@ function resetGameState() {
   renderBoard();
 }
 
+function setStartButtonMode(isPlaying) {
+  const icon = elements.startGame.querySelector('i, svg');
+  const label = elements.startGame.querySelector('span');
+  elements.startGame.disabled = !isPlaying && state.records.length < 2;
+  icon?.setAttribute('data-lucide', isPlaying ? 'rotate-cw' : 'play');
+  if (label) {
+    label.textContent = isPlaying ? 'Reset' : 'Start Game';
+  }
+  refreshIcons();
+}
+
 function startGame() {
   if (state.records.length < 2) {
     return;
   }
+  state.isPlaying = true;
   elements.gameMain.hidden = true;
   elements.gamePlay.hidden = false;
+  setStartButtonMode(true);
   resetGameState();
   startTimer();
   setStatus('Game started.', 'ready');
@@ -230,17 +241,23 @@ function finishGame() {
   elements.finalTime.textContent = formatTime(state.elapsedMs);
   elements.finalMoves.textContent = String(state.moves);
   elements.playerCode.value = '';
-  setScoreStatus('Enter up to 8 characters.');
+  setScoreStatus('Enter a name up to 8 characters.');
   elements.scoreModal.hidden = false;
   document.body.classList.add('modal-open');
   elements.playerCode.focus();
 }
 
 function returnToMain() {
+  window.clearInterval(state.timerId);
+  state.timerId = null;
+  state.locked = false;
+  state.flipped = [];
+  state.isPlaying = false;
   elements.scoreModal.hidden = true;
   elements.gamePlay.hidden = true;
   elements.gameMain.hidden = false;
   document.body.classList.remove('modal-open');
+  setStartButtonMode(false);
   setStatus(`${state.records.length} cards available.`, 'ready');
 }
 
@@ -299,7 +316,7 @@ async function submitScore(event) {
   event.preventDefault();
   const playerCode = elements.playerCode.value.trim().toUpperCase().slice(0, 8);
   if (!playerCode) {
-    setScoreStatus('Ranking code is required.', 'error');
+    setScoreStatus('Name is required.', 'error');
     return;
   }
 
@@ -351,10 +368,13 @@ async function init() {
   }
 }
 
-elements.startGame.addEventListener('click', startGame);
-elements.newGame.addEventListener('click', () => {
-  resetGameState();
-  startTimer();
+elements.startGame.addEventListener('click', () => {
+  if (state.isPlaying) {
+    resetGameState();
+    startTimer();
+    return;
+  }
+  startGame();
 });
 elements.scoreForm.addEventListener('submit', submitScore);
 elements.skipScore.addEventListener('click', returnToMain);

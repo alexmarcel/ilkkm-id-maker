@@ -9,21 +9,28 @@
   <body>
     <main class="app-shell">
       <section class="game-shell" aria-label="Match Card game">
-        <div class="game-header">
-          <div class="heading">
-            <h5 class="eyebrow">
-              <img class="brand-icon" src="/icon.jpg" alt="" aria-hidden="true">
-              <span>Match Card</span>
-            </h5>
-            <a class="secondary-link inline-link" href="/">
-              <i data-lucide="arrow-left" aria-hidden="true"></i>
-              <span>BACK TO COHORTS</span>
-            </a>
+        <div class="game-header" id="gameHeader">
+          <div class="game-intro-row">
+            <div class="heading">
+              <h5 class="eyebrow">
+                <img class="brand-icon" src="/icon.jpg" alt="" aria-hidden="true">
+                <span>Match Card</span>
+              </h5>
+              <a class="secondary-link inline-link" href="/">
+                <i data-lucide="arrow-left" aria-hidden="true"></i>
+                <span>BACK TO COHORTS</span>
+              </a>
+            </div>
           </div>
-          <button class="primary-action game-start-button" id="startGame" type="button" disabled>
-            <i data-lucide="play" aria-hidden="true"></i>
-            <span>Start Game</span>
-          </button>
+          <div class="game-rules">
+            <p>Match front ID cards as fast as you can.</p><p>Every student appears twice, and the fastest completed times climb the ranking.</p>
+          </div>
+          <div class="game-start-row">
+            <button class="primary-action game-start-button" id="startGame" type="button" disabled>
+              <i data-lucide="play" aria-hidden="true"></i>
+              <span>Start Game</span>
+            </button>
+          </div>
         </div>
 
         
@@ -33,15 +40,10 @@
             <span id="gameTimer">00:00.0</span>
             <span id="gameMoves">0 moves</span>
             <span id="gameMatches">0 / 0 matched</span>
-            <button class="secondary-action game-reset-button" id="newGame" type="button">
-              <i data-lucide="rotate-cw" aria-hidden="true"></i>
-              <span>New Game</span>
-            </button>
           </div>
           <div class="game-board" id="gameBoard" aria-label="Match cards"></div>
         </section>
       </section>
-
       <div class="modal-overlay" id="scoreModal" hidden>
         <form class="modal-dialog dataset-dialog" id="scoreForm" role="dialog" aria-modal="true" aria-labelledby="scoreModalTitle">
           <div class="modal-header">
@@ -57,12 +59,12 @@
               <span id="finalMoves">0</span>
             </div>
             <label class="field">
-              <span>Ranking Code</span>
+              <span>Name</span>
               <input id="playerCode" type="text" maxlength="8" autocomplete="off" required>
             </label>
             <p class="save-status" id="scoreStatus" role="status">
               <i data-lucide="info" aria-hidden="true"></i>
-              <span>Enter up to 8 characters.</span>
+              <span>Enter a name up to 8 characters.</span>
             </p>
           </div>
           <div class="modal-actions">
@@ -75,7 +77,7 @@
         </form>
       </div>
 
-      <section class="game-main" id="gameMain" style="margin-top:20px">
+      <section class="game-shell game-main" id="gameMain" style="margin-top:20px">
           <div class="game-rank-panel">
             <div class="records-card-header">
               <h2>Ranking</h2>
@@ -86,7 +88,7 @@
                 <thead>
                   <tr>
                     <th scope="col">Rank</th>
-                    <th scope="col">Code</th>
+                    <th scope="col">Name</th>
                     <th scope="col">Time</th>
                     <th scope="col">Moves</th>
                   </tr>
