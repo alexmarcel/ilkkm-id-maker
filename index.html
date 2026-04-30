@@ -3,153 +3,85 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>ILKKM ID Card Maker</title>
-    <link rel="stylesheet" href="styles.css">
+    <title>Cohorts - ILKKM ID Card Maker</title>
+    <link rel="stylesheet" href="/styles.css">
   </head>
   <body>
     <main class="app-shell">
-      <section class="workspace" aria-label="Student ID card maker">
-        <form class="control-panel" id="cardForm" novalidate>
+      <section class="cohort-shell" aria-label="ILKKM cohorts">
+        <div class="cohort-page-header">
           <div class="heading">
             <h5 class="eyebrow">
-              <img class="brand-icon" src="icon.jpg" alt="" aria-hidden="true">
+              <img class="brand-icon" src="/icon.jpg" alt="" aria-hidden="true">
               <span>ILKKM ID CARD</span>
             </h5>
           </div>
+          <div class="cohort-header-actions">
+            <a class="primary-action add-cohort-button" href="/game" style="text-decoration: none;">
+              <i data-lucide="gamepad-2" aria-hidden="true"></i>
+              <span>Memory Game</span>
+            </a>
+            <button class="secondary-action add-cohort-button" id="addCohort" type="button" style="display: none;">
+              <i data-lucide="plus" aria-hidden="true"></i>
+              <span>Add Cohort</span>
+            </button>
+          </div>
+        </div>
 
-          <p class="save-status" id="saveStatus" role="status">
-            <i data-lucide="info" aria-hidden="true"></i>
-            <span>Enter a valid IC number to check saved data.</span>
-          </p>
+        <p class="export-count" id="cohortStatus" role="status">Loading cohorts...</p>
+        <div class="cohort-grid" id="cohortGrid" aria-label="Available cohorts"></div>
+      </section>
 
-          <label class="field">
-            <span>IC Number</span>
-            <input
-              id="icInput"
-              name="ic"
-              type="text"
-              inputmode="numeric"
-              placeholder=""
-              maxlength="14"
-              required
-            >
-          </label>
-
-          <div class="field upload-field">
-            <span>Photo</span>
-            <label class="upload-button" for="photoInput" tabindex="0">
-              <i data-lucide="image-up" aria-hidden="true"></i>
-              <span id="photoButtonText">Upload Photo</span>
+      <div class="modal-overlay" id="cohortModal" hidden>
+        <form class="modal-dialog dataset-dialog" id="cohortForm" role="dialog" aria-modal="true" aria-labelledby="cohortModalTitle">
+          <div class="modal-header">
+            <h2 id="cohortModalTitle">ADD COHORT</h2>
+            <button class="icon-button" id="closeCohortModal" type="button" aria-label="Close add cohort">
+              <i data-lucide="x" aria-hidden="true"></i>
+            </button>
+          </div>
+          <div class="dataset-summary">
+            <label class="field">
+              <span>Program</span>
+              <input id="newCohortProgram" type="text" required>
             </label>
-            <input id="photoInput" name="photo" type="file" accept="image/jpeg,image/png" required>
-            <p class="field-status" id="photoStatus" role="status">
+            <label class="field">
+              <span>Sesi</span>
+              <input id="newCohortSesi" type="text" required>
+            </label>
+            <div class="field upload-field">
+              <span>Photo</span>
+              <label class="upload-button" for="newCohortIcon" tabindex="0">
+                <i data-lucide="image-up" aria-hidden="true"></i>
+                <span id="cohortIconButtonText">Add Photo</span>
+              </label>
+              <input id="newCohortIcon" type="file" accept="image/jpeg,image/png">
+              <button class="secondary-action danger-action remove-photo-action" id="removeCohortIcon" type="button" hidden>
+                <i data-lucide="image-minus" aria-hidden="true"></i>
+                <span>Remove Photo</span>
+              </button>
+            </div>
+            <label class="field color-field">
+              <span>Panel Color</span>
+              <input id="newCohortColor" type="color" value="#0f8ea3">
+            </label>
+            <p class="save-status" id="cohortModalStatus" role="status">
               <i data-lucide="info" aria-hidden="true"></i>
-              <span></span>
+              <span>Use the exports/admin login when prompted.</span>
             </p>
           </div>
-
-          <label class="field">
-            <span>Name</span>
-            <input id="nameInput" name="name" type="text" autocomplete="name" required>
-          </label>
-
-          <label class="field">
-            <span>Matrix Number</span>
-            <input
-              id="matrixInput"
-              name="matrix"
-              type="text"
-              placeholder=""
-              maxlength="20"
-              required
-            >
-          </label>
-
-          <label class="field">
-            <span>Program</span>
-            <input id="programInput" type="text" value="DIPLOMA KEJURURAWATAN" disabled>
-          </label>
-
-          <label class="field">
-            <span>Sesi</span>
-            <input id="sesiInput" type="text" value="SESI JANUARI 2026 - DISEMBER 2028" disabled>
-          </label>
-
-          <button class="primary-action save-action" id="saveStudent" type="button" disabled>
-            <i data-lucide="save" aria-hidden="true"></i>
-            <span>Save</span>
-          </button>
+          <div class="modal-actions">
+            <button class="secondary-action" id="cancelCohort" type="button">Cancel</button>
+            <button class="primary-action" id="saveCohort" type="submit">
+              <i data-lucide="check" aria-hidden="true"></i>
+              <span>Create Cohort</span>
+            </button>
+          </div>
         </form>
-
-        <section class="preview-panel" aria-label="Generated card preview">
-          <div class="preview-toolbar" role="tablist" aria-label="Preview side">
-            <button id="frontTab" class="tab-button active" type="button" role="tab" aria-selected="true">Front</button>
-            <button id="backTab" class="tab-button" type="button" role="tab" aria-selected="false">Back</button>
-          </div>
-
-          <div class="preview-frame">
-            <canvas id="frontCanvas" class="preview-canvas active" width="1967" height="3121" aria-label="Front card preview"></canvas>
-            <canvas id="backCanvas" class="preview-canvas" width="1967" height="3121" aria-label="Back card preview"></canvas>
-            <div class="preview-closed-overlay" id="previewClosedOverlay" hidden>
-              <div class="preview-closed-message">
-                <i data-lucide="lock-keyhole" aria-hidden="true"></i>
-                <strong>CLOSED</strong>
-                <span>Please contact admin.</span>
-              </div>
-            </div>
-          </div>
-
-          <div class="download-actions preview-download-actions">
-            <button id="downloadFrontPreview" class="active" type="button" disabled>
-              <i data-lucide="download" aria-hidden="true"></i>
-              <span>Download Front</span>
-            </button>
-            <button id="downloadBackPreview" type="button" disabled>
-              <i data-lucide="download" aria-hidden="true"></i>
-              <span>Download Back</span>
-            </button>
-          </div>
-        </section>
-      </section>
-
-      <section class="records-card" aria-label="Saved cohort records">
-        <div class="records-card-header">
-          <h2>Saved Records</h2>
-          <div class="records-header-actions">
-            <a class="secondary-action grid-preview-link" href="/grid">
-              <i data-lucide="layout-grid" aria-hidden="true"></i>
-              <span>Grid Preview</span>
-            </a>
-            <button class="icon-button" id="refreshRecords" type="button" aria-label="Refresh saved records">
-              <i data-lucide="refresh-cw" aria-hidden="true"></i>
-            </button>
-          </div>
-        </div>
-        <div class="records-table-wrap">
-          <table class="records-table" aria-label="Saved records for this cohort">
-            <thead>
-              <tr>
-                <th scope="col"></th>
-                <th scope="col">Name</th>
-                <th scope="col">Matrix Number</th>
-                <th scope="col">Saved</th>
-              </tr>
-            </thead>
-            <tbody id="cohortRecordsBody">
-              <tr>
-                <td colspan="4">Loading records...</td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-      </section>
-
-      <div class="saving-overlay" id="savingOverlay" hidden>
-        <img src="icon.jpg" alt="" aria-hidden="true">
       </div>
     </main>
 
     <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
-    <script src="app.js"></script>
+    <script src="/home.js"></script>
   </body>
 </html>

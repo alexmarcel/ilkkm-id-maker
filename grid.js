@@ -1,10 +1,8 @@
-const DEFAULT_PROGRAM = 'DIPLOMA KEJURURAWATAN';
-const DEFAULT_SESI = 'SESI JANUARI 2026 - DISEMBER 2028';
-
 const elements = {
   status: document.querySelector('#gridStatus'),
   grid: document.querySelector('#cardGrid'),
   printGrid: document.querySelector('#printGrid'),
+  generatorLink: document.querySelector('#gridGeneratorLink'),
   printModal: document.querySelector('#printModal'),
   printSummary: document.querySelector('#printSummary'),
   closePrintModal: document.querySelector('#closePrintModal'),
@@ -13,6 +11,12 @@ const elements = {
 };
 
 let currentRecords = [];
+let currentCohort = null;
+
+function getCohortSlugFromPath() {
+  const match = window.location.pathname.match(/^\/cohorts\/([^/]+)/);
+  return match ? decodeURIComponent(match[1]) : '';
+}
 
 function buildQuery(params) {
   const query = new URLSearchParams();
@@ -20,6 +24,10 @@ function buildQuery(params) {
     query.set(key, value);
   });
   return query.toString();
+}
+
+function getCohortQuery() {
+  return buildQuery({ cohortSlug: currentCohort?.slug || getCohortSlugFromPath() });
 }
 
 function setStatus(message, type = '') {
@@ -65,8 +73,8 @@ function renderCards(records) {
     backImage.loading = 'lazy';
     frontImage.alt = `Front card for ${record.name}`;
     backImage.alt = `Back card for ${record.name}`;
-    frontImage.src = `/api/students/${encodeURIComponent(record.icNumber)}/card/front/thumbnail`;
-    backImage.dataset.src = `/api/students/${encodeURIComponent(record.icNumber)}/card/back/thumbnail`;
+    frontImage.src = `/api/students/${encodeURIComponent(record.icNumber)}/card/front/thumbnail?${getCohortQuery()}`;
+    backImage.dataset.src = `/api/students/${encodeURIComponent(record.icNumber)}/card/back/thumbnail?${getCohortQuery()}`;
     inner.append(frontImage, backImage);
     item.append(inner);
     item.addEventListener('click', () => {
@@ -95,8 +103,8 @@ function addSummaryRow(label, value) {
 function openPrintModal() {
   const totalFiles = currentRecords.length * 2;
   elements.printSummary.innerHTML = '';
-  addSummaryRow('Program', DEFAULT_PROGRAM);
-  addSummaryRow('Sesi', DEFAULT_SESI);
+  addSummaryRow('Program', currentCohort.program);
+  addSummaryRow('Sesi', currentCohort.sesi);
   addSummaryRow('Students', currentRecords.length);
   addSummaryRow('Front JPGs', currentRecords.length);
   addSummaryRow('Back JPGs', currentRecords.length);
@@ -120,10 +128,16 @@ async function loadGrid() {
   renderMessage('Loading cards...');
 
   try {
-    const response = await fetch(`/api/students/records/cohort?${buildQuery({
-      program: DEFAULT_PROGRAM,
-      sesi: DEFAULT_SESI,
-    })}`);
+    const slug = getCohortSlugFromPath();
+    const cohortResponse = await fetch(`/api/cohorts/${encodeURIComponent(slug)}`);
+    const cohort = await cohortResponse.json().catch(() => ({}));
+    if (!cohortResponse.ok) {
+      throw new Error(cohort.error || 'Cohort not found.');
+    }
+    currentCohort = cohort;
+    elements.generatorLink.href = `/cohorts/${encodeURIComponent(cohort.slug)}`;
+
+    const response = await fetch(`/api/students/records/cohort?${getCohortQuery()}`);
 
     if (!response.ok) {
       throw new Error('Records request failed.');
@@ -149,10 +163,7 @@ elements.printGrid.addEventListener('click', () => {
 
 elements.confirmPrintDownload.addEventListener('click', () => {
   setStatus('Preparing ZIP...', 'ready');
-  window.location.href = `/api/exports/cards.zip?${buildQuery({
-    program: DEFAULT_PROGRAM,
-    sesi: DEFAULT_SESI,
-  })}`;
+  window.location.href = `/api/exports/cards.zip?${getCohortQuery()}`;
 
   window.setTimeout(() => {
     setStatus('Download started.', 'ready');

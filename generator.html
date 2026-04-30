@@ -1,0 +1,163 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>ILKKM ID Card Maker</title>
+    <link rel="stylesheet" href="/styles.css">
+  </head>
+  <body>
+    <main class="app-shell">
+      <section class="workspace" aria-label="Student ID card maker">
+        <form class="control-panel" id="cardForm" novalidate>
+          <div class="heading">
+            <h5 class="eyebrow">
+              <img class="brand-icon" src="/icon.jpg" alt="" aria-hidden="true">
+              <span>ILKKM ID CARD</span>
+            </h5>
+            <a class="secondary-link inline-link" href="/">
+              <i data-lucide="arrow-left" aria-hidden="true"></i>
+              <span>BACK TO COHORTS</span>
+            </a>
+          </div>
+
+          <p class="save-status" id="saveStatus" role="status">
+            <i data-lucide="info" aria-hidden="true"></i>
+            <span>Enter a valid IC number to check saved data.</span>
+          </p>
+
+          <label class="field">
+            <span>IC Number</span>
+            <input
+              id="icInput"
+              name="ic"
+              type="text"
+              inputmode="numeric"
+              placeholder=""
+              maxlength="14"
+              required
+            >
+          </label>
+
+          <div class="field upload-field">
+            <span>Photo</span>
+            <label class="upload-button" for="photoInput" tabindex="0">
+              <i data-lucide="image-up" aria-hidden="true"></i>
+              <span id="photoButtonText">Upload Photo</span>
+            </label>
+            <input id="photoInput" name="photo" type="file" accept="image/jpeg,image/png" required>
+            <p class="field-status" id="photoStatus" role="status">
+              <i data-lucide="info" aria-hidden="true"></i>
+              <span></span>
+            </p>
+          </div>
+
+          <label class="field">
+            <span>Name</span>
+            <input id="nameInput" name="name" type="text" autocomplete="name" required>
+          </label>
+
+          <label class="field">
+            <span>Matrix Number</span>
+            <input
+              id="matrixInput"
+              name="matrix"
+              type="text"
+              placeholder=""
+              maxlength="20"
+              required
+            >
+          </label>
+
+          <label class="field">
+            <span>Program</span>
+            <input id="programInput" type="text" value="DIPLOMA KEJURURAWATAN" disabled>
+          </label>
+
+          <label class="field">
+            <span>Sesi</span>
+            <input id="sesiInput" type="text" value="SESI JANUARI 2026 - DISEMBER 2028" disabled>
+          </label>
+
+          <button class="primary-action save-action" id="saveStudent" type="button" disabled>
+            <i data-lucide="save" aria-hidden="true"></i>
+            <span>Save</span>
+          </button>
+        </form>
+
+        <section class="preview-panel" aria-label="Generated card preview">
+          <div class="preview-toolbar" role="tablist" aria-label="Preview side">
+            <button id="frontTab" class="tab-button active" type="button" role="tab" aria-selected="true">Front</button>
+            <button id="backTab" class="tab-button" type="button" role="tab" aria-selected="false">Back</button>
+          </div>
+
+          <div class="preview-frame">
+            <canvas id="frontCanvas" class="preview-canvas active" width="1967" height="3121" aria-label="Front card preview"></canvas>
+            <canvas id="backCanvas" class="preview-canvas" width="1967" height="3121" aria-label="Back card preview"></canvas>
+            <div class="preview-closed-overlay" id="previewClosedOverlay" hidden>
+              <div class="preview-closed-message">
+                <i data-lucide="lock-keyhole" aria-hidden="true"></i>
+                <strong>CLOSED</strong>
+                <span>Please contact admin.</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="download-actions preview-download-actions">
+            <button id="downloadFrontPreview" class="active" type="button" disabled>
+              <i data-lucide="download" aria-hidden="true"></i>
+              <span>Download Front</span>
+            </button>
+            <button id="downloadBackPreview" type="button" disabled>
+              <i data-lucide="download" aria-hidden="true"></i>
+              <span>Download Back</span>
+            </button>
+          </div>
+        </section>
+      </section>
+
+      <section class="records-card" aria-label="Saved cohort records">
+        <div class="records-card-header">
+          <h2>Saved Records</h2>
+          <div class="records-header-actions">
+            <a class="secondary-action grid-preview-link" id="gridPreviewLink" href="/grid">
+              <i data-lucide="layout-grid" aria-hidden="true"></i>
+              <span>Grid Preview</span>
+            </a>
+            <a class="secondary-action grid-preview-link" id="exportsLink" href="/exports">
+              <i data-lucide="archive" aria-hidden="true"></i>
+              <span>Exports</span>
+            </a>
+            <button class="icon-button" id="refreshRecords" type="button" aria-label="Refresh saved records">
+              <i data-lucide="refresh-cw" aria-hidden="true"></i>
+            </button>
+          </div>
+        </div>
+        <div class="records-table-wrap">
+          <table class="records-table" aria-label="Saved records for this cohort">
+            <thead>
+              <tr>
+                <th scope="col"></th>
+                <th scope="col">Name</th>
+                <th scope="col">Matrix Number</th>
+                <th scope="col">Saved</th>
+              </tr>
+            </thead>
+            <tbody id="cohortRecordsBody">
+              <tr>
+                <td colspan="4">Loading records...</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <div class="saving-overlay" id="savingOverlay" hidden>
+        <img src="/icon.jpg" alt="" aria-hidden="true">
+      </div>
+    </main>
+
+    <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
+    <script src="/app.js"></script>
+  </body>
+</html>

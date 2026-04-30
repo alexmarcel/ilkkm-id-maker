@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Match Card - ILKKM ID Card Maker</title>
+    <link rel="stylesheet" href="/styles.css">
+  </head>
+  <body>
+    <main class="app-shell">
+      <section class="game-shell" aria-label="Match Card game">
+        <div class="game-header">
+          <div class="heading">
+            <h5 class="eyebrow">
+              <img class="brand-icon" src="/icon.jpg" alt="" aria-hidden="true">
+              <span>Match Card</span>
+            </h5>
+            <a class="secondary-link inline-link" href="/">
+              <i data-lucide="arrow-left" aria-hidden="true"></i>
+              <span>BACK TO COHORTS</span>
+            </a>
+          </div>
+          <button class="primary-action game-start-button" id="startGame" type="button" disabled>
+            <i data-lucide="play" aria-hidden="true"></i>
+            <span>Start Game</span>
+          </button>
+        </div>
+
+        
+
+        <section class="game-play" id="gamePlay" hidden>
+          <div class="game-stats" aria-label="Game progress">
+            <span id="gameTimer">00:00.0</span>
+            <span id="gameMoves">0 moves</span>
+            <span id="gameMatches">0 / 0 matched</span>
+            <button class="secondary-action game-reset-button" id="newGame" type="button">
+              <i data-lucide="rotate-cw" aria-hidden="true"></i>
+              <span>New Game</span>
+            </button>
+          </div>
+          <div class="game-board" id="gameBoard" aria-label="Match cards"></div>
+        </section>
+      </section>
+
+      <div class="modal-overlay" id="scoreModal" hidden>
+        <form class="modal-dialog dataset-dialog" id="scoreForm" role="dialog" aria-modal="true" aria-labelledby="scoreModalTitle">
+          <div class="modal-header">
+            <h2 id="scoreModalTitle">GAME COMPLETE</h2>
+          </div>
+          <div class="dataset-summary">
+            <div class="summary-row">
+              <span>Time</span>
+              <span id="finalTime">00:00.0</span>
+            </div>
+            <div class="summary-row">
+              <span>Moves</span>
+              <span id="finalMoves">0</span>
+            </div>
+            <label class="field">
+              <span>Ranking Code</span>
+              <input id="playerCode" type="text" maxlength="8" autocomplete="off" required>
+            </label>
+            <p class="save-status" id="scoreStatus" role="status">
+              <i data-lucide="info" aria-hidden="true"></i>
+              <span>Enter up to 8 characters.</span>
+            </p>
+          </div>
+          <div class="modal-actions">
+            <button class="secondary-action" id="skipScore" type="button">Skip</button>
+            <button class="primary-action" id="saveScore" type="submit">
+              <i data-lucide="trophy" aria-hidden="true"></i>
+              <span>Save Ranking</span>
+            </button>
+          </div>
+        </form>
+      </div>
+
+      <section class="game-main" id="gameMain" style="margin-top:20px">
+          <div class="game-rank-panel">
+            <div class="records-card-header">
+              <h2>Ranking</h2>
+              <p class="export-count" id="gameStatus" role="status">Loading game...</p>
+            </div>
+            <div class="records-table-wrap">
+              <table class="records-table" aria-label="Global match card ranking">
+                <thead>
+                  <tr>
+                    <th scope="col">Rank</th>
+                    <th scope="col">Code</th>
+                    <th scope="col">Time</th>
+                    <th scope="col">Moves</th>
+                  </tr>
+                </thead>
+                <tbody id="rankingBody">
+                  <tr>
+                    <td colspan="4">Loading ranking...</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+    </main>
+
+    <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
+    <script src="/game.js"></script>
+  </body>
+</html>

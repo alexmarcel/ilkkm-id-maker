@@ -178,6 +178,13 @@ h1 {
   cursor: not-allowed;
 }
 
+.color-field input[type="color"] {
+  width: 100%;
+  height: 46px;
+  padding: 5px;
+  cursor: pointer;
+}
+
 .upload-field input[type="file"] {
   position: absolute;
   width: 1px;
@@ -346,6 +353,17 @@ h1 {
 .danger-action {
   color: #9f2a20;
   border-color: rgba(180, 35, 24, 0.22);
+}
+
+.remove-photo-action {
+  width: 100%;
+  margin-top: 8px;
+}
+
+.remove-photo-action.active {
+  color: #fff;
+  background: var(--danger);
+  border-color: var(--danger);
 }
 
 .secondary-link {
@@ -842,6 +860,318 @@ h1 {
   margin: 0 auto;
 }
 
+.cohort-shell {
+  width: min(1180px, 100%);
+  margin: 0 auto;
+}
+
+.cohort-page-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 14px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 18px;
+  background: var(--panel);
+  box-shadow: var(--shadow);
+  backdrop-filter: blur(18px);
+}
+
+.add-cohort-button {
+  width: auto;
+  min-width: 160px;
+  padding: 0 16px;
+}
+
+.cohort-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.cohort-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+  margin-top: 14px;
+}
+
+.cohort-card-wrap {
+  position: relative;
+  min-width: 0;
+  min-height: 220px;
+}
+
+.cohort-card {
+  position: relative;
+  display: grid;
+  grid-template-rows: auto auto 1fr auto;
+  gap: 10px;
+  height: 100%;
+  min-height: 220px;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 22px 18px 18px;
+  color: var(--text);
+  text-decoration: none;
+  background:
+    linear-gradient(135deg, var(--cohort-card-soft-color, rgba(15, 142, 163, 0.18)), rgba(255, 255, 255, 0.9) 58%),
+    rgba(255, 255, 255, 0.82);
+  background:
+    linear-gradient(135deg, color-mix(in srgb, var(--cohort-card-color, #0f8ea3) 18%, white), rgba(255, 255, 255, 0.9) 58%),
+    rgba(255, 255, 255, 0.82);
+  box-shadow: 0 12px 32px rgba(20, 45, 57, 0.12);
+  transition: transform 160ms ease, box-shadow 160ms ease, border-color 160ms ease;
+}
+
+.cohort-card::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  background-image: var(--cohort-card-image);
+  background-position: center;
+  background-size: cover;
+  opacity: 0.18;
+  pointer-events: none;
+}
+
+.cohort-card::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  background:
+    linear-gradient(135deg, color-mix(in srgb, var(--cohort-card-color, #0f8ea3) 36%, transparent), transparent 48%),
+    linear-gradient(315deg, color-mix(in srgb, var(--cohort-card-color, #0f8ea3) 18%, transparent), transparent 50%);
+  opacity: 0.8;
+  pointer-events: none;
+}
+
+.cohort-edit-button {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  z-index: 2;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border: 1px solid rgba(15, 142, 163, 0.22);
+  border-radius: 8px;
+  color: #0d5665;
+  background: rgba(255, 255, 255, 0.92);
+  box-shadow: 0 8px 18px rgba(20, 45, 57, 0.12);
+}
+
+.cohort-edit-button:hover {
+  background: #fff;
+  border-color: rgba(15, 142, 163, 0.42);
+}
+
+.cohort-edit-button svg {
+  width: 17px;
+  height: 17px;
+  stroke-width: 2.4;
+}
+
+.cohort-card:hover {
+  border-color: color-mix(in srgb, var(--cohort-card-color, #0f8ea3) 44%, white);
+  box-shadow: 0 18px 42px rgba(20, 45, 57, 0.16);
+  transform: translateY(-2px);
+}
+
+.cohort-card strong {
+  position: relative;
+  z-index: 1;
+  color: #123b67;
+  font-size: 20px;
+  line-height: 1.2;
+}
+
+.cohort-card span {
+  position: relative;
+  z-index: 1;
+  color: var(--muted);
+  font-size: 14px;
+  line-height: 1.35;
+}
+
+.cohort-status {
+  align-self: end;
+  justify-self: start;
+  border-radius: 999px;
+  padding: 6px 10px;
+  font-weight: 700;
+}
+
+.cohort-status.open {
+  color: #0b6549;
+  background: rgba(236, 252, 246, 0.94);
+}
+
+.cohort-status.closed {
+  color: #8f1f17;
+  background: rgba(255, 241, 239, 0.94);
+}
+
+.game-shell {
+  width: min(1180px, 100%);
+  margin: 0 auto;
+}
+
+.game-header,
+.game-rank-panel,
+.game-play {
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--panel);
+  box-shadow: var(--shadow);
+  backdrop-filter: blur(18px);
+}
+
+.game-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 14px;
+  padding: 18px;
+}
+
+.game-start-button,
+.game-reset-button {
+  width: auto;
+  min-width: 160px;
+  padding: 0 16px;
+}
+
+.game-main {
+  display: grid;
+  gap: 14px;
+}
+
+.game-rank-panel {
+  padding: 16px;
+}
+
+.game-play {
+  display: grid;
+  gap: 14px;
+  padding: 16px;
+}
+
+.game-play[hidden] {
+  display: none;
+}
+
+.game-stats {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr)) auto;
+  gap: 10px;
+  align-items: center;
+}
+
+.game-stats > span {
+  min-height: 44px;
+  border: 1px solid rgba(15, 142, 163, 0.16);
+  border-radius: 10px;
+  padding: 11px 12px;
+  color: #274354;
+  background: rgba(240, 248, 250, 0.84);
+  font-weight: 700;
+  text-align: center;
+}
+
+.game-board {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.match-card {
+  display: block;
+  min-width: 0;
+  border: 0;
+  padding: 0;
+  appearance: none;
+  background: transparent;
+  cursor: pointer;
+  perspective: 1200px;
+}
+
+.match-card-inner {
+  position: relative;
+  display: block;
+  width: 100%;
+  aspect-ratio: 1967 / 3121;
+  transform-style: preserve-3d;
+  transition: transform 360ms ease;
+}
+
+.match-card.flipped .match-card-inner,
+.match-card.matched .match-card-inner {
+  transform: rotateY(180deg);
+}
+
+.match-card-face {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  width: 100%;
+  height: 100%;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  overflow: hidden;
+  background: #fff;
+  box-shadow: 0 12px 28px rgba(20, 45, 57, 0.12);
+  backface-visibility: hidden;
+}
+
+.match-card-backface {
+  gap: 10px;
+  align-content: center;
+  justify-items: center;
+  padding: 12px;
+  color: #0d5665;
+  background:
+    linear-gradient(135deg, rgba(15, 142, 163, 0.2), rgba(41, 111, 176, 0.14)),
+    #f8fbfc;
+}
+
+.match-card-backface strong {
+  font-size: clamp(11px, 1.8vw, 18px);
+  line-height: 1.1;
+  text-align: center;
+}
+
+.match-card-backface img {
+  width: min(42%, 54px);
+  height: auto;
+  border-radius: 8px;
+  opacity: 0.88;
+}
+
+.match-card-frontface {
+  display: block;
+  object-fit: cover;
+  transform: rotateY(180deg);
+}
+
+.match-card.matched .match-card-frontface {
+  outline: 4px solid rgba(12, 122, 85, 0.36);
+  outline-offset: -4px;
+}
+
+.match-card:disabled {
+  cursor: default;
+}
+
 .grid-page-header {
   display: grid;
   gap: 14px;
@@ -1248,6 +1578,41 @@ h1 {
   .card-grid {
     grid-template-columns: repeat(3, minmax(0, 1fr));
     gap: 9px;
+  }
+
+  .cohort-page-header {
+    display: grid;
+    gap: 12px;
+    padding: 14px;
+  }
+
+  .cohort-header-actions,
+  .game-header {
+    display: grid;
+    gap: 10px;
+  }
+
+  .add-cohort-button {
+    width: 100%;
+  }
+
+  .game-start-button,
+  .game-reset-button {
+    width: 100%;
+  }
+
+  .game-stats {
+    grid-template-columns: 1fr;
+  }
+
+  .game-board {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 9px;
+  }
+
+  .cohort-grid {
+    grid-template-columns: 1fr;
+    gap: 10px;
   }
 
   .grid-page-header {

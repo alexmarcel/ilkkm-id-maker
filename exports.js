@@ -1,6 +1,3 @@
-const DEFAULT_PROGRAM = 'DIPLOMA KEJURURAWATAN';
-const DEFAULT_SESI = 'SESI JANUARI 2026 - DISEMBER 2028';
-
 const elements = {
   program: document.querySelector('#exportProgram'),
   sesi: document.querySelector('#exportSesi'),
@@ -28,6 +25,7 @@ const elements = {
   closeDatasetModal: document.querySelector('#closeDatasetModal'),
   cancelDatasetAction: document.querySelector('#cancelDatasetAction'),
   confirmDatasetAction: document.querySelector('#confirmDatasetAction'),
+  generatorLink: document.querySelector('#exportsGeneratorLink'),
 };
 
 let countTimer = null;
@@ -37,18 +35,40 @@ let restoreFile = null;
 let regenerateIcNumber = null;
 let currentRecords = [];
 let datasetBusy = false;
+let currentCohort = null;
+
+function getCohortSlugFromPath() {
+  const match = window.location.pathname.match(/^\/cohorts\/([^/]+)/);
+  return match ? decodeURIComponent(match[1]) : '';
+}
+
+async function loadCohort() {
+  const slug = getCohortSlugFromPath();
+  const response = await fetch(`/api/cohorts/${encodeURIComponent(slug)}`);
+  const result = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(result.error || 'Cohort not found.');
+  }
+
+  currentCohort = result;
+  elements.program.value = result.program;
+  elements.sesi.value = result.sesi;
+  elements.program.disabled = true;
+  elements.sesi.disabled = true;
+  elements.generatorLink.href = `/cohorts/${encodeURIComponent(result.slug)}`;
+}
 
 function getFilters() {
   return {
-    program: elements.program.value.trim() || DEFAULT_PROGRAM,
-    sesi: elements.sesi.value.trim() || DEFAULT_SESI,
+    cohortSlug: currentCohort?.slug || getCohortSlugFromPath(),
+    program: elements.program.value.trim(),
+    sesi: elements.sesi.value.trim(),
   };
 }
 
 function buildQuery(filters) {
   const params = new URLSearchParams();
-  params.set('program', filters.program);
-  params.set('sesi', filters.sesi);
+  params.set('cohortSlug', filters.cohortSlug);
   return params.toString();
 }
 
@@ -203,7 +223,7 @@ async function refreshCount() {
 
 async function loadAcceptingResponseSetting() {
   try {
-    const response = await fetch('/api/settings/accepting-response');
+    const response = await fetch(`/api/settings/accepting-response?${buildQuery(getFilters())}`);
     if (!response.ok) {
       throw new Error('Setting request failed.');
     }
@@ -221,7 +241,7 @@ async function updateAcceptingResponseSetting() {
   setStatus('Saving response setting...');
 
   try {
-    const response = await fetch('/api/exports/settings/accepting-response', {
+    const response = await fetch(`/api/exports/cohorts/${encodeURIComponent(currentCohort.slug)}/settings/accepting-response`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -598,7 +618,7 @@ async function confirmRegenerate() {
     for (let index = 0; index < records.length; index += 1) {
       const record = records[index];
       updateDatasetProgress(index, records.length, record.name ? `Regenerating ${record.name}...` : 'Regenerating card...');
-      const response = await fetch(`/api/exports/records/${encodeURIComponent(record.icNumber)}/regenerate`, { method: 'POST' });
+      const response = await fetch(`/api/exports/records/${encodeURIComponent(record.icNumber)}/regenerate?${buildQuery(filters)}`, { method: 'POST' });
       const result = await response.json().catch(() => ({}));
 
       if (!response.ok) {
@@ -652,7 +672,7 @@ function openCardModal(button) {
 
   elements.cardModalTitle.textContent = `${side === 'front' ? 'Front' : 'Back'} Card - ${name}`;
   elements.cardModalImage.alt = `${side === 'front' ? 'Front' : 'Back'} card for ${name}`;
-  elements.cardModalImage.src = `/api/exports/records/${encodeURIComponent(icNumber)}/${side}?v=${Date.now()}`;
+  elements.cardModalImage.src = `/api/exports/records/${encodeURIComponent(icNumber)}/${side}?${buildQuery(getFilters())}&v=${Date.now()}`;
   elements.cardModal.hidden = false;
   document.body.classList.add('modal-open');
   refreshIcons();
@@ -678,7 +698,7 @@ async function deleteRecord(button) {
   refreshIcons();
 
   try {
-    const response = await fetch(`/api/exports/records/${encodeURIComponent(icNumber)}`, {
+    const response = await fetch(`/api/exports/records/${encodeURIComponent(icNumber)}?${buildQuery(getFilters())}`, {
       method: 'DELETE',
     });
 
@@ -744,5 +764,14 @@ document.addEventListener('keydown', (event) => {
   }
 });
 
-loadAcceptingResponseSetting();
-refreshCount();
+async function init() {
+  try {
+    await loadCohort();
+    await loadAcceptingResponseSetting();
+    await refreshCount();
+  } catch (error) {
+    setError(error.message || 'Could not load cohort.');
+  }
+}
+
+init();

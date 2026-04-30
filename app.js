@@ -1,8 +1,6 @@
 const TEMPLATE_WIDTH = 1967;
 const TEMPLATE_HEIGHT = 3121;
 const RENDER_SCALE = 2;
-const PROGRAM = 'DIPLOMA KEJURURAWATAN';
-const SESI = 'SESI JANUARI 2026 - DISEMBER 2028';
 const MAX_PHOTO_SIZE = 1024 * 1024;
 const ALLOWED_PHOTO_TYPES = new Set(['image/jpeg', 'image/png']);
 const MATRIX_PATTERN = /^[A-Z]{4} \d\/\d{4}\(\d{2}\)-\d{4}$/;
@@ -67,6 +65,7 @@ const LAYOUT = {
       maxWidth: 1220,
       fontSize: 72,
       minFontSize: 44,
+      lineHeight: 78,
     },
     sesi: {
       x: 100,
@@ -97,6 +96,7 @@ const state = {
   fontReady: false,
   fontError: false,
   acceptingResponse: false,
+  cohort: null,
 };
 
 const elements = {
@@ -115,6 +115,8 @@ const elements = {
   downloadFrontPreview: document.querySelector('#downloadFrontPreview'),
   downloadBackPreview: document.querySelector('#downloadBackPreview'),
   refreshRecords: document.querySelector('#refreshRecords'),
+  gridPreviewLink: document.querySelector('#gridPreviewLink'),
+  exportsLink: document.querySelector('#exportsLink'),
   cohortRecordsBody: document.querySelector('#cohortRecordsBody'),
   savingOverlay: document.querySelector('#savingOverlay'),
   frontTab: document.querySelector('#frontTab'),
@@ -242,8 +244,8 @@ function getFormData() {
     name: elements.nameInput.value.trim().toUpperCase(),
     matrix: elements.matrixInput.value.trim().toUpperCase(),
     ic: elements.icInput.value.trim().toUpperCase(),
-    program: (elements.programInput?.value || PROGRAM).trim().toUpperCase(),
-    sesi: (elements.sesiInput?.value || SESI).trim().toUpperCase(),
+    program: (elements.programInput?.value || state.cohort?.program || '').trim().toUpperCase(),
+    sesi: (elements.sesiInput?.value || state.cohort?.sesi || '').trim().toUpperCase(),
   };
 }
 
@@ -627,7 +629,7 @@ function drawBackScene(context) {
     drawLeftSingleLine(context, data.ic, LAYOUT.back.ic);
   }
 
-  drawLeftSingleLine(context, data.program, LAYOUT.back.program);
+  drawLeftWrappedName(context, data.program, LAYOUT.back.program);
   drawLeftSingleLine(context, data.sesi, LAYOUT.back.sesi);
 }
 
@@ -738,6 +740,36 @@ function buildQuery(params) {
   return query.toString();
 }
 
+function getCohortSlugFromPath() {
+  const match = window.location.pathname.match(/^\/cohorts\/([^/]+)/);
+  return match ? decodeURIComponent(match[1]) : '';
+}
+
+function getCohortQuery() {
+  return buildQuery({ cohortSlug: state.cohort?.slug || getCohortSlugFromPath() });
+}
+
+async function loadCohort() {
+  const slug = getCohortSlugFromPath();
+  if (!slug) {
+    window.location.href = '/';
+    return;
+  }
+
+  const response = await fetch(`/api/cohorts/${encodeURIComponent(slug)}`);
+  const result = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(result.error || 'Cohort not found.');
+  }
+
+  state.cohort = result;
+  elements.programInput.value = result.program;
+  elements.sesiInput.value = result.sesi;
+  elements.gridPreviewLink.href = `/cohorts/${encodeURIComponent(result.slug)}/grid`;
+  elements.exportsLink.href = `/cohorts/${encodeURIComponent(result.slug)}/exports`;
+  state.acceptingResponse = Boolean(result.acceptingResponse);
+}
+
 function renderRecordsMessage(message) {
   elements.cohortRecordsBody.innerHTML = '';
   const row = document.createElement('tr');
@@ -783,11 +815,7 @@ async function refreshCohortRecords() {
   renderRecordsMessage('Loading records...');
 
   try {
-    const data = getFormData();
-    const response = await fetch(`/api/students/records/cohort?${buildQuery({
-      program: data.program,
-      sesi: data.sesi,
-    })}`);
+    const response = await fetch(`/api/students/records/cohort?${getCohortQuery()}`);
 
     if (!response.ok) {
       throw new Error('Records request failed');
@@ -910,9 +938,11 @@ async function lookupStudentByIc() {
   setSaveStatus('Checking saved data...', 'loading');
 
   try {
-    const response = await fetch(`/api/students/${encodeURIComponent(ic)}`, {
+    const response = await fetch(`/api/students/${encodeURIComponent(ic)}?${getCohortQuery()}`, {
       signal: state.lookupController.signal,
     });
+
+    const result = await response.json().catch(() => ({}));
 
     if (response.status === 404) {
       clearStudentFields();
@@ -920,11 +950,17 @@ async function lookupStudentByIc() {
       return;
     }
 
-    if (!response.ok) {
-      throw new Error('Lookup failed');
+    if (response.status === 409) {
+      clearStudentFields();
+      setSaveStatus(result.error || 'This IC number is already saved in another cohort.', 'error');
+      return;
     }
 
-    const student = await response.json();
+    if (!response.ok) {
+      throw new Error(result.error || 'Lookup failed');
+    }
+
+    const student = result;
     elements.nameInput.value = student.name || '';
     elements.matrixInput.value = student.matrixNumber || '';
     state.uploadedPhoto = null;
@@ -1011,6 +1047,7 @@ async function saveStudent() {
     payload.set('matrixNumber', data.matrix);
     payload.set('program', data.program);
     payload.set('sesi', data.sesi);
+    payload.set('cohortSlug', state.cohort.slug);
 
     if (state.uploadedPhotoFile) {
       payload.set('photo', state.uploadedPhotoFile, state.uploadedPhotoFile.name);
@@ -1044,7 +1081,7 @@ async function saveStudent() {
 
 async function loadAcceptingResponseSetting() {
   try {
-    const response = await fetch('/api/settings/accepting-response');
+    const response = await fetch(`/api/settings/accepting-response?${getCohortQuery()}`);
     if (!response.ok) {
       throw new Error('Setting request failed.');
     }
@@ -1061,13 +1098,20 @@ async function init() {
     window.lucide.createIcons();
   }
 
-  await loadAcceptingResponseSetting();
+  try {
+    await loadCohort();
+  } catch (error) {
+    setSaveStatus(error.message || 'Cohort not found.', 'error');
+    return;
+  }
+
   await loadCardFont();
+  await loadAcceptingResponseSetting();
 
   try {
     const [frontTemplate, backTemplate] = await Promise.all([
-      loadImage('front.jpg'),
-      loadImage('back.jpg'),
+      loadImage('/front.jpg'),
+      loadImage('/back.jpg'),
     ]);
 
     state.templates.front = frontTemplate;

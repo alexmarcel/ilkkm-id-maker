@@ -1,12 +1,16 @@
 # ILKKM ID Card Generator
 
-Browser-based student ID card generator with a Node/SQLite backend for saving records, photos, generated card images, and cohort exports.
+Browser-based student ID card generator with a Node/SQLite backend for managing cohorts, saving records, photos, generated card images, and cohort exports.
 
 <img width="3780" height="1512" alt="snapshot" src="https://github.com/user-attachments/assets/38e5cc9f-5066-4e90-b464-fe01acbcf808" />
 
 
 ## Features
 
+- Public cohort home page lists available cohorts in a grid.
+- Global Match Card mini game with timer and ranking.
+- Admin-protected Add/Edit Cohort flow creates cohorts from Program + Sesi and updates the grid photo.
+- Each cohort has its own generator, grid preview, exports page, response setting, ZIP export, backup, restore, and regeneration tools.
 - Generate front/back student ID JPGs from `front.jpg` and `back.jpg`.
 - IC number lookup using format `######-##-####`.
 - Matrix number enforcement using format `ABCD 1/1111(11)-1111`.
@@ -29,11 +33,13 @@ npm start
 
 Open:
 
-- Generator: `http://localhost:3000/`
-- Grid Preview: `http://localhost:3000/grid`
-- Exports: `http://localhost:3000/exports`
+- Cohorts: `http://localhost:3000/`
+- Match Game: `http://localhost:3000/game`
+- Generator: `http://localhost:3000/cohorts/{cohort_slug}`
+- Grid Preview: `http://localhost:3000/cohorts/{cohort_slug}/grid`
+- Exports: `http://localhost:3000/cohorts/{cohort_slug}/exports`
 
-The Exports page and export APIs use HTTP Basic Auth.
+The Add Cohort flow, Exports page, and export APIs use HTTP Basic Auth.
 
 Default credentials:
 
@@ -49,11 +55,11 @@ EXPORTS_PASSWORD=your-secure-password
 
 ## Save Workflow
 
-When a valid IC number is typed, the app checks SQLite for an existing student.
+The home page creates or opens a cohort first. When a valid IC number is typed in a cohort generator, the app checks SQLite for an existing student in that cohort.
 
 When `Save` is clicked, the backend stores:
 
-- Student details in SQLite, using IC number as the unique ID.
+- Student details in SQLite, using IC number as the global unique ID and the selected cohort as the record group.
 - Compressed portrait photo in `/data/photos`.
 - Generated front/back JPGs in `/data/exports/{PROGRAM_SESI_SLUG}`.
 
@@ -63,9 +69,25 @@ Existing IC numbers are updated. Saved filenames remove IC hyphens:
 - `{icnumber}_front.jpg`
 - `{icnumber}_back.jpg`
 
+## Cohorts
+
+The app stores cohorts in SQLite with a generated slug based on Program + Sesi. On startup, the default cohort is created automatically:
+
+```text
+DIPLOMA KEJURURAWATAN / SESI JANUARI 2026 - DISEMBER 2028
+```
+
+Existing records are migrated into matching cohorts by Program/Sesi. The old `/grid` and `/exports` routes redirect to the default cohort routes.
+
+Use the pencil button on a cohort card to edit its Program, Sesi, or grid photo. When Program/Sesi changes, saved student rows are updated and existing card JPGs are regenerated so the back-card text stays consistent.
+
+## Match Card Game
+
+The global Match Card game uses saved front/back card thumbnails from all cohorts. Players start from `/game`, match card pairs against a timer, then enter up to 8 characters for the global ranking table. Rankings are sorted by fastest time, then fewer moves.
+
 ## Exports
 
-The Exports page supports:
+Each cohort Exports page supports:
 
 - Record table with number, name, matrix number, and IC number.
 - Front-card modal preview via the `file-input` icon.
@@ -129,7 +151,7 @@ Generated thumbnails are cached in `/data/thumbnails`. They are invalidated when
 
 ## Accepting Responses
 
-The Exports page has an `Accepting response` switch for the main generator.
+Each cohort Exports page has an `Accepting response` switch for that cohort generator.
 
 When responses are closed:
 
@@ -173,7 +195,8 @@ Persistent app data is mounted at `/data` inside the container.
 ## Important Files
 
 - `server.js` - Express server, SQLite schema, save/export/delete APIs.
-- `index.html` / `app.js` - Main generator UI and canvas rendering.
+- `index.html` / `home.js` - Public cohort grid and Add Cohort entrypoint.
+- `generator.html` / `app.js` - Cohort generator UI and canvas rendering.
 - `exports.html` / `exports.js` - Protected exports UI.
 - `grid.html` / `grid.js` - Cohort grid preview UI.
 - `styles.css` - Shared responsive UI styles.

@@ -17,6 +17,7 @@ const DB_PATH = process.env.DB_PATH || path.join(DATA_DIR, 'app.sqlite');
 const EXPORTS_DIR = process.env.EXPORTS_DIR || path.join(DATA_DIR, 'exports');
 const PHOTOS_DIR = process.env.PHOTOS_DIR || path.join(DATA_DIR, 'photos');
 const THUMBNAILS_DIR = process.env.THUMBNAILS_DIR || path.join(DATA_DIR, 'thumbnails');
+const COHORT_ICONS_DIR = process.env.COHORT_ICONS_DIR || path.join(DATA_DIR, 'cohort-icons');
 const DEFAULT_PROGRAM = 'DIPLOMA KEJURURAWATAN';
 const DEFAULT_SESI = 'SESI JANUARI 2026 - DISEMBER 2028';
 const EXPORTS_USERNAME = process.env.EXPORTS_USERNAME || 'admin';
@@ -25,6 +26,8 @@ const MAX_PHOTO_SIZE = 1024 * 1024;
 const MAX_RESTORE_SIZE = 500 * 1024 * 1024;
 const VALID_IC_PATTERN = /^\d{6}-\d{2}-\d{4}$/;
 const VALID_MATRIX_PATTERN = /^[A-Z]{4} \d\/\d{4}\(\d{2}\)-\d{4}$/;
+const VALID_COLOR_PATTERN = /^#[0-9A-F]{6}$/i;
+const DEFAULT_COHORT_COLOR = '#0f8ea3';
 const TEMPLATE_WIDTH = 1967;
 const TEMPLATE_HEIGHT = 3121;
 const THUMBNAIL_WIDTH = 720;
@@ -79,6 +82,7 @@ const CARD_LAYOUT = {
       maxWidth: 1220,
       fontSize: 72,
       minFontSize: 44,
+      lineHeight: 78,
     },
     sesi: {
       x: 100,
@@ -94,6 +98,7 @@ fs.mkdirSync(DATA_DIR, { recursive: true });
 fs.mkdirSync(EXPORTS_DIR, { recursive: true });
 fs.mkdirSync(PHOTOS_DIR, { recursive: true });
 fs.mkdirSync(THUMBNAILS_DIR, { recursive: true });
+fs.mkdirSync(COHORT_ICONS_DIR, { recursive: true });
 
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -111,9 +116,30 @@ const restoreUpload = multer({
   },
 });
 
+const cohortIconUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: {
+    fileSize: 5 * 1024 * 1024,
+    files: 1,
+  },
+});
+
 const db = new Database(DB_PATH);
 db.pragma('journal_mode = WAL');
 db.exec(`
+  CREATE TABLE IF NOT EXISTS cohorts (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    slug TEXT NOT NULL UNIQUE,
+    program TEXT NOT NULL,
+    sesi TEXT NOT NULL,
+    icon_filename TEXT,
+    accent_color TEXT NOT NULL DEFAULT '#0f8ea3',
+    accepting_response_closed INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    UNIQUE(program, sesi)
+  );
+
   CREATE TABLE IF NOT EXISTS students (
     ic_number TEXT PRIMARY KEY,
     name TEXT NOT NULL,
@@ -135,7 +161,33 @@ db.exec(`
     value TEXT NOT NULL,
     updated_at TEXT NOT NULL
   );
+
+  CREATE TABLE IF NOT EXISTS game_scores (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    player_code TEXT NOT NULL,
+    time_ms INTEGER NOT NULL,
+    moves INTEGER NOT NULL,
+    pairs INTEGER NOT NULL,
+    created_at TEXT NOT NULL
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_game_scores_rank
+    ON game_scores (time_ms, moves, created_at);
 `);
+
+const studentColumns = db.prepare('PRAGMA table_info(students)').all().map((column) => column.name);
+if (!studentColumns.includes('cohort_id')) {
+  db.exec('ALTER TABLE students ADD COLUMN cohort_id INTEGER');
+}
+db.exec('CREATE INDEX IF NOT EXISTS idx_students_cohort_id ON students (cohort_id)');
+
+const cohortColumns = db.prepare('PRAGMA table_info(cohorts)').all().map((column) => column.name);
+if (!cohortColumns.includes('icon_filename')) {
+  db.exec('ALTER TABLE cohorts ADD COLUMN icon_filename TEXT');
+}
+if (!cohortColumns.includes('accent_color')) {
+  db.exec(`ALTER TABLE cohorts ADD COLUMN accent_color TEXT NOT NULL DEFAULT '${DEFAULT_COHORT_COLOR}'`);
+}
 
 function getSetting(key, fallback = '') {
   const row = db.prepare('SELECT value FROM settings WHERE key = ?').get(key);
@@ -154,6 +206,10 @@ function setSetting(key, value) {
 
 function isResponseClosed() {
   return getSetting('accepting_response_closed', 'false') === 'true';
+}
+
+function isCohortResponseClosed(cohort) {
+  return Boolean(cohort?.accepting_response_closed);
 }
 
 function getProgramSesi(query) {
@@ -175,6 +231,126 @@ function getCohortSlug(program, sesi) {
   return `${slugify(program)}_${slugify(sesi)}`;
 }
 
+function normalizeProgramSesi(program, sesi) {
+  return {
+    program: String(program || DEFAULT_PROGRAM).trim().toUpperCase(),
+    sesi: String(sesi || DEFAULT_SESI).trim().toUpperCase(),
+  };
+}
+
+function normalizeColor(value) {
+  const color = String(value || DEFAULT_COHORT_COLOR).trim();
+  if (!VALID_COLOR_PATTERN.test(color)) {
+    throw new Error('Color must be a hex value like #0f8ea3.');
+  }
+
+  return color.toLowerCase();
+}
+
+function serializeCohort(cohort, recordCount = null) {
+  if (!cohort) {
+    return null;
+  }
+
+  const result = {
+    id: cohort.id,
+    slug: cohort.slug,
+    program: cohort.program,
+    sesi: cohort.sesi,
+    iconUrl: cohort.icon_filename
+      ? `/api/cohorts/${encodeURIComponent(cohort.slug)}/icon?v=${encodeURIComponent(cohort.updated_at || '')}`
+      : null,
+    accentColor: cohort.accent_color || DEFAULT_COHORT_COLOR,
+    acceptingResponse: Boolean(cohort.accepting_response_closed),
+    createdAt: cohort.created_at,
+    updatedAt: cohort.updated_at,
+  };
+
+  if (recordCount !== null) {
+    result.recordCount = recordCount;
+  }
+
+  return result;
+}
+
+function getCohortBySlug(slug) {
+  return db.prepare(`
+    SELECT id, slug, program, sesi, icon_filename, accent_color, accepting_response_closed, created_at, updated_at
+    FROM cohorts
+    WHERE slug = ?
+  `).get(String(slug || '').trim());
+}
+
+function getCohortByProgramSesi(program, sesi) {
+  const normalized = normalizeProgramSesi(program, sesi);
+  return db.prepare(`
+    SELECT id, slug, program, sesi, icon_filename, accent_color, accepting_response_closed, created_at, updated_at
+    FROM cohorts
+    WHERE program = ? AND sesi = ?
+  `).get(normalized.program, normalized.sesi);
+}
+
+function createCohort(program, sesi, options = {}) {
+  const normalized = normalizeProgramSesi(program, sesi);
+  const slug = getCohortSlug(normalized.program, normalized.sesi);
+  const now = new Date().toISOString();
+  const acceptingResponseClosed = options.acceptingResponseClosed ? 1 : 0;
+  const accentColor = normalizeColor(options.accentColor);
+
+  db.prepare(`
+    INSERT INTO cohorts (slug, program, sesi, icon_filename, accent_color, accepting_response_closed, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(slug, normalized.program, normalized.sesi, options.iconFilename || null, accentColor, acceptingResponseClosed, now, now);
+
+  return getCohortBySlug(slug);
+}
+
+function getOrCreateCohort(program, sesi, options = {}) {
+  return getCohortByProgramSesi(program, sesi) || createCohort(program, sesi, options);
+}
+
+function getDefaultCohort() {
+  return getOrCreateCohort(DEFAULT_PROGRAM, DEFAULT_SESI, {
+    acceptingResponseClosed: getSetting('accepting_response_closed', 'false') === 'true',
+  });
+}
+
+function getCohortFromRequest(req) {
+  const slug = String(req.params?.slug || req.query?.cohortSlug || req.body?.cohortSlug || '').trim();
+  if (slug) {
+    return getCohortBySlug(slug);
+  }
+
+  const { program, sesi } = getProgramSesi(req.query || req.body || {});
+  return getOrCreateCohort(program, sesi);
+}
+
+function migrateCohorts() {
+  const defaultCohort = getDefaultCohort();
+  const groups = db.prepare(`
+    SELECT DISTINCT program, sesi
+    FROM students
+    WHERE program IS NOT NULL AND sesi IS NOT NULL
+  `).all();
+
+  groups.forEach((group) => {
+    const cohort = getOrCreateCohort(group.program, group.sesi);
+    db.prepare(`
+      UPDATE students
+      SET cohort_id = ?, program = ?, sesi = ?
+      WHERE program = ? AND sesi = ? AND (cohort_id IS NULL OR cohort_id != ?)
+    `).run(cohort.id, cohort.program, cohort.sesi, group.program, group.sesi, cohort.id);
+  });
+
+  db.prepare(`
+    UPDATE students
+    SET cohort_id = ?
+    WHERE cohort_id IS NULL
+  `).run(defaultCohort.id);
+}
+
+migrateCohorts();
+
 function stripIcHyphens(icNumber) {
   return String(icNumber).replace(/-/g, '');
 }
@@ -189,6 +365,25 @@ function getPhotoExtension(mimetype) {
   }
 
   return null;
+}
+
+async function saveCohortIcon(file, slug) {
+  if (!file) {
+    return null;
+  }
+
+  if (!getPhotoExtension(file.mimetype)) {
+    throw new Error('Cohort icon must be a JPG or PNG image.');
+  }
+
+  const filename = `${slug}_icon.jpg`;
+  const iconBuffer = await sharp(file.buffer)
+    .resize(360, 360, { fit: 'cover', position: 'centre' })
+    .jpeg({ quality: 88 })
+    .toBuffer();
+
+  writeFileEnsured(path.join(COHORT_ICONS_DIR, filename), iconBuffer);
+  return filename;
 }
 
 function assertValidJpeg(file, label) {
@@ -239,7 +434,7 @@ async function getCardThumbnailPath(student, side) {
 
 function getStudent(icNumber) {
   return db.prepare(`
-    SELECT ic_number, name, matrix_number, program, sesi, photo_filename, front_filename, back_filename, created_at, updated_at
+    SELECT ic_number, cohort_id, name, matrix_number, program, sesi, photo_filename, front_filename, back_filename, created_at, updated_at
     FROM students
     WHERE ic_number = ?
   `).get(icNumber);
@@ -261,12 +456,21 @@ function resolveInside(baseDir, storedFilename) {
 }
 
 function getStudents(program, sesi) {
+  const cohort = getOrCreateCohort(program, sesi);
+  return getStudentsByCohort(cohort);
+}
+
+function getStudentsByCohort(cohort) {
   return db.prepare(`
-    SELECT ic_number, name, matrix_number, program, sesi, photo_filename, front_filename, back_filename, created_at, updated_at
+    SELECT ic_number, cohort_id, name, matrix_number, program, sesi, photo_filename, front_filename, back_filename, created_at, updated_at
     FROM students
-    WHERE program = ? AND sesi = ?
+    WHERE cohort_id = ?
     ORDER BY name COLLATE NOCASE, ic_number
-  `).all(program, sesi);
+  `).all(cohort.id);
+}
+
+function studentBelongsToCohort(student, cohort) {
+  return Boolean(student && cohort && Number(student.cohort_id) === Number(cohort.id));
 }
 
 function normalizeCohortValue(value) {
@@ -274,8 +478,12 @@ function normalizeCohortValue(value) {
 }
 
 function getDatasetSummary(program, sesi) {
-  const students = getStudents(program, sesi);
-  const cohortSlug = getCohortSlug(program, sesi);
+  return getDatasetSummaryForCohort(getOrCreateCohort(program, sesi));
+}
+
+function getDatasetSummaryForCohort(cohort) {
+  const students = getStudentsByCohort(cohort);
+  const { program, sesi, slug: cohortSlug } = cohort;
   const cohortExportDir = path.join(EXPORTS_DIR, cohortSlug);
   const counts = {
     records: students.length,
@@ -320,7 +528,8 @@ function getDatasetSummary(program, sesi) {
 }
 
 function getBackupManifest(program, sesi) {
-  const summary = getDatasetSummary(program, sesi);
+  const cohort = getOrCreateCohort(program, sesi);
+  const summary = getDatasetSummaryForCohort(cohort);
   return {
     app: 'ilkkm-id-card-generator',
     type: 'cohort-dataset',
@@ -510,7 +719,7 @@ async function renderStudentCards(student) {
     leftWrappedNameElements(data.name, CARD_LAYOUT.back.name),
     fittedTextElement(data.matrix, CARD_LAYOUT.back.matrix),
     fittedTextElement(data.ic, CARD_LAYOUT.back.ic),
-    fittedTextElement(data.program, CARD_LAYOUT.back.program),
+    leftWrappedNameElements(data.program, CARD_LAYOUT.back.program),
     fittedTextElement(data.sesi, CARD_LAYOUT.back.sesi),
   ]);
 
@@ -789,32 +998,34 @@ async function parseDatasetBackup(file, program, sesi) {
 }
 
 async function restoreCohortBackup(parsed, program, sesi) {
-  const currentStudents = getStudents(program, sesi);
-  const cohortSlug = getCohortSlug(program, sesi);
+  const cohort = getOrCreateCohort(program, sesi);
+  const currentStudents = getStudentsByCohort(cohort);
+  const cohortSlug = cohort.slug;
   const cohortExportDir = path.join(EXPORTS_DIR, cohortSlug);
   const stagingDir = path.join(DATA_DIR, `.restore-${Date.now()}-${crypto.randomBytes(4).toString('hex')}`);
   const stagedPhotosDir = path.join(stagingDir, 'photos');
   const stagedCardsDir = path.join(stagingDir, 'exports', cohortSlug);
 
   const restoreTransaction = db.transaction((students) => {
-    db.prepare('DELETE FROM students WHERE program = ? AND sesi = ?').run(program, sesi);
+    db.prepare('DELETE FROM students WHERE cohort_id = ?').run(cohort.id);
 
     const insert = db.prepare(`
       INSERT INTO students (
-        ic_number, name, matrix_number, program, sesi,
+        ic_number, cohort_id, name, matrix_number, program, sesi,
         photo_filename, front_filename, back_filename,
         created_at, updated_at
       )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
     students.forEach((student) => {
       insert.run(
         student.ic_number,
+        cohort.id,
         String(student.name).trim().toUpperCase(),
         String(student.matrix_number).trim().toUpperCase(),
-        program,
-        sesi,
+        cohort.program,
+        cohort.sesi,
         path.basename(student.photo_filename),
         path.basename(student.front_filename),
         path.basename(student.back_filename),
@@ -890,78 +1101,468 @@ function requireExportsPassword(req, res, next) {
   res.status(401).send('Exports password required.');
 }
 
+function serializeStudentRecords(students) {
+  return students.map((student, index) => ({
+    number: index + 1,
+    name: student.name,
+    matrixNumber: student.matrix_number,
+    icNumber: student.ic_number,
+  }));
+}
+
+function sendCohortNotFound(res) {
+  res.status(404).json({ error: 'Cohort not found.' });
+}
+
+function formatGameScore(row, index = 0) {
+  return {
+    rank: index + 1,
+    playerCode: row.player_code,
+    timeMs: row.time_ms,
+    moves: row.moves,
+    pairs: row.pairs,
+    createdAt: row.created_at,
+  };
+}
+
 app.use(['/exports', '/exports.html', '/api/exports'], requireExportsPassword);
+app.use(/^\/cohorts\/[^/]+\/exports\/?$/, requireExportsPassword);
+app.use('/admin/cohorts/new', requireExportsPassword);
+app.use(/^\/admin\/cohorts\/[^/]+\/edit\/?$/, requireExportsPassword);
+
+app.get('/cohorts/:slug', (req, res) => {
+  const cohort = getCohortBySlug(req.params.slug);
+  if (!cohort) {
+    res.status(404).send('Cohort not found.');
+    return;
+  }
+
+  res.sendFile(path.join(ROOT_DIR, 'generator.html'));
+});
+
+app.get('/cohorts/:slug/grid', (req, res) => {
+  const cohort = getCohortBySlug(req.params.slug);
+  if (!cohort) {
+    res.status(404).send('Cohort not found.');
+    return;
+  }
+
+  res.sendFile(path.join(ROOT_DIR, 'grid.html'));
+});
+
+app.get('/cohorts/:slug/exports', (req, res) => {
+  const cohort = getCohortBySlug(req.params.slug);
+  if (!cohort) {
+    res.status(404).send('Cohort not found.');
+    return;
+  }
+
+  res.sendFile(path.join(ROOT_DIR, 'exports.html'));
+});
+
+app.get('/admin/cohorts/new', (req, res) => {
+  res.sendFile(path.join(ROOT_DIR, 'index.html'));
+});
+
+app.get('/admin/cohorts/:slug/edit', (req, res) => {
+  const cohort = getCohortBySlug(req.params.slug);
+  if (!cohort) {
+    res.status(404).send('Cohort not found.');
+    return;
+  }
+
+  res.sendFile(path.join(ROOT_DIR, 'index.html'));
+});
+
+app.get('/grid', (req, res) => {
+  res.redirect(`/cohorts/${encodeURIComponent(getDefaultCohort().slug)}/grid`);
+});
+
+app.get('/exports', (req, res) => {
+  res.redirect(`/cohorts/${encodeURIComponent(getDefaultCohort().slug)}/exports`);
+});
+
+app.get('/game', (req, res) => {
+  res.sendFile(path.join(ROOT_DIR, 'game.html'));
+});
 
 app.use(express.static(ROOT_DIR, {
   extensions: ['html'],
   index: 'index.html',
 }));
 
-app.get('/exports', (req, res) => {
-  res.sendFile(path.join(ROOT_DIR, 'exports.html'));
+app.get('/api/cohorts', (req, res) => {
+  const cohorts = db.prepare(`
+    SELECT
+      cohorts.id,
+      cohorts.slug,
+      cohorts.program,
+      cohorts.sesi,
+      cohorts.icon_filename,
+      cohorts.accent_color,
+      cohorts.accepting_response_closed,
+      cohorts.created_at,
+      cohorts.updated_at,
+      COUNT(students.ic_number) AS record_count
+    FROM cohorts
+    LEFT JOIN students ON students.cohort_id = cohorts.id
+    GROUP BY cohorts.id
+    ORDER BY cohorts.created_at ASC, cohorts.program COLLATE NOCASE, cohorts.sesi COLLATE NOCASE
+  `).all();
+
+  res.json({
+    cohorts: cohorts.map((cohort) => serializeCohort(cohort, Number(cohort.record_count || 0))),
+  });
+});
+
+app.get('/api/cohorts/:slug', (req, res) => {
+  const cohort = getCohortBySlug(req.params.slug);
+  if (!cohort) {
+    sendCohortNotFound(res);
+    return;
+  }
+
+  const row = db.prepare('SELECT COUNT(*) AS count FROM students WHERE cohort_id = ?').get(cohort.id);
+  res.json(serializeCohort(cohort, Number(row.count || 0)));
+});
+
+app.get('/api/cohorts/:slug/icon', (req, res) => {
+  const cohort = getCohortBySlug(req.params.slug);
+  if (!cohort) {
+    sendCohortNotFound(res);
+    return;
+  }
+
+  const iconPath = resolveInside(COHORT_ICONS_DIR, cohort.icon_filename);
+  if (!iconPath || !fs.existsSync(iconPath)) {
+    res.status(404).json({ error: 'Cohort icon not found.' });
+    return;
+  }
+
+  res.setHeader('Cache-Control', 'public, max-age=86400');
+  res.sendFile(iconPath);
+});
+
+app.get('/api/game/cards', (req, res) => {
+  const students = db.prepare(`
+    SELECT students.ic_number, students.name, students.front_filename, students.back_filename, cohorts.slug AS cohort_slug
+    FROM students
+    INNER JOIN cohorts ON cohorts.id = students.cohort_id
+    ORDER BY students.updated_at DESC, students.name COLLATE NOCASE
+  `).all();
+
+  const cards = students
+    .filter((student) => {
+      const cohortExportDir = path.join(EXPORTS_DIR, student.cohort_slug);
+      const frontPath = resolveInside(cohortExportDir, student.front_filename);
+      const backPath = resolveInside(cohortExportDir, student.back_filename);
+      return frontPath && backPath && fs.existsSync(frontPath) && fs.existsSync(backPath);
+    })
+    .map((student) => {
+      const cohortSlug = student.cohort_slug;
+      const query = `cohortSlug=${encodeURIComponent(cohortSlug)}`;
+      return {
+        name: student.name,
+        icNumber: student.ic_number,
+        cohortSlug,
+        frontThumbnailUrl: `/api/students/${encodeURIComponent(student.ic_number)}/card/front/thumbnail?${query}`,
+        backThumbnailUrl: `/api/students/${encodeURIComponent(student.ic_number)}/card/back/thumbnail?${query}`,
+      };
+    });
+
+  res.json({
+    cards,
+    count: cards.length,
+  });
+});
+
+app.get('/api/game/scores', (req, res) => {
+  const rows = db.prepare(`
+    SELECT player_code, time_ms, moves, pairs, created_at
+    FROM game_scores
+    ORDER BY time_ms ASC, moves ASC, created_at ASC
+    LIMIT 10
+  `).all();
+
+  res.json({
+    scores: rows.map(formatGameScore),
+  });
+});
+
+app.post('/api/game/scores', express.json(), (req, res) => {
+  const playerCode = String(req.body?.playerCode || '').trim().toUpperCase().slice(0, 8);
+  const timeMs = Number(req.body?.timeMs || 0);
+  const moves = Number(req.body?.moves || 0);
+  const pairs = Number(req.body?.pairs || 0);
+
+  if (!playerCode) {
+    res.status(400).json({ error: 'Player code is required.' });
+    return;
+  }
+
+  if (!Number.isInteger(timeMs) || timeMs <= 0 || timeMs > 60 * 60 * 1000) {
+    res.status(400).json({ error: 'Invalid completion time.' });
+    return;
+  }
+
+  if (!Number.isInteger(moves) || moves <= 0 || moves > 1000) {
+    res.status(400).json({ error: 'Invalid move count.' });
+    return;
+  }
+
+  if (!Number.isInteger(pairs) || pairs < 2 || pairs > 8) {
+    res.status(400).json({ error: 'Invalid pair count.' });
+    return;
+  }
+
+  db.prepare(`
+    INSERT INTO game_scores (player_code, time_ms, moves, pairs, created_at)
+    VALUES (?, ?, ?, ?, ?)
+  `).run(playerCode, timeMs, moves, pairs, new Date().toISOString());
+
+  const rows = db.prepare(`
+    SELECT player_code, time_ms, moves, pairs, created_at
+    FROM game_scores
+    ORDER BY time_ms ASC, moves ASC, created_at ASC
+    LIMIT 10
+  `).all();
+
+  res.status(201).json({
+    saved: true,
+    scores: rows.map(formatGameScore),
+  });
+});
+
+app.post('/api/exports/cohorts', cohortIconUpload.single('icon'), async (req, res) => {
+  try {
+    const normalized = normalizeProgramSesi(req.body?.program, req.body?.sesi);
+    if (!normalized.program || !normalized.sesi) {
+      res.status(400).json({ error: 'Program and sesi are required.' });
+      return;
+    }
+
+    const existing = getCohortByProgramSesi(normalized.program, normalized.sesi);
+    if (existing) {
+      res.status(409).json({ error: 'Cohort already exists.', cohort: serializeCohort(existing) });
+      return;
+    }
+
+    const slug = getCohortSlug(normalized.program, normalized.sesi);
+    const iconFilename = await saveCohortIcon(req.file, slug);
+    const accentColor = normalizeColor(req.body?.accentColor);
+    const cohort = createCohort(normalized.program, normalized.sesi, { iconFilename, accentColor });
+    res.status(201).json({ cohort: serializeCohort(cohort, 0) });
+  } catch (error) {
+    res.status(400).json({ error: error.message || 'Could not create cohort.' });
+  }
+});
+
+app.patch('/api/exports/cohorts/:slug', cohortIconUpload.single('icon'), async (req, res) => {
+  const cohort = getCohortBySlug(req.params.slug);
+  if (!cohort) {
+    sendCohortNotFound(res);
+    return;
+  }
+
+  try {
+    const normalized = normalizeProgramSesi(req.body?.program, req.body?.sesi);
+    if (!normalized.program || !normalized.sesi) {
+      res.status(400).json({ error: 'Program and sesi are required.' });
+      return;
+    }
+
+    const matching = getCohortByProgramSesi(normalized.program, normalized.sesi);
+    if (matching && Number(matching.id) !== Number(cohort.id)) {
+      res.status(409).json({ error: 'Another cohort already uses this Program/Sesi.', cohort: serializeCohort(matching) });
+      return;
+    }
+
+    const newSlug = getCohortSlug(normalized.program, normalized.sesi);
+    const oldSlug = cohort.slug;
+    const slugChanged = oldSlug !== newSlug;
+    const oldExportDir = path.join(EXPORTS_DIR, oldSlug);
+    const newExportDir = path.join(EXPORTS_DIR, newSlug);
+
+    if (slugChanged && fs.existsSync(oldExportDir) && fs.existsSync(newExportDir)) {
+      res.status(409).json({ error: 'The target export folder already exists.' });
+      return;
+    }
+
+    const removeIcon = String(req.body?.removeIcon || '').toLowerCase() === 'true';
+    const iconFilename = removeIcon
+      ? null
+      : req.file
+      ? await saveCohortIcon(req.file, newSlug)
+      : cohort.icon_filename;
+    const accentColor = normalizeColor(req.body?.accentColor || cohort.accent_color);
+    const now = new Date().toISOString();
+
+    const updateTransaction = db.transaction(() => {
+      db.prepare(`
+        UPDATE cohorts
+        SET slug = ?, program = ?, sesi = ?, icon_filename = ?, accent_color = ?, updated_at = ?
+        WHERE id = ?
+      `).run(newSlug, normalized.program, normalized.sesi, iconFilename || null, accentColor, now, cohort.id);
+
+      db.prepare(`
+        UPDATE students
+        SET program = ?, sesi = ?, updated_at = ?
+        WHERE cohort_id = ?
+      `).run(normalized.program, normalized.sesi, now, cohort.id);
+    });
+
+    updateTransaction();
+
+    try {
+      if (slugChanged && fs.existsSync(oldExportDir)) {
+        fs.renameSync(oldExportDir, newExportDir);
+      }
+    } catch (error) {
+      db.prepare(`
+        UPDATE cohorts
+        SET slug = ?, program = ?, sesi = ?, icon_filename = ?, accent_color = ?, updated_at = ?
+        WHERE id = ?
+      `).run(oldSlug, cohort.program, cohort.sesi, cohort.icon_filename || null, cohort.accent_color || DEFAULT_COHORT_COLOR, new Date().toISOString(), cohort.id);
+      db.prepare(`
+        UPDATE students
+        SET program = ?, sesi = ?, updated_at = ?
+        WHERE cohort_id = ?
+      `).run(cohort.program, cohort.sesi, new Date().toISOString(), cohort.id);
+      throw error;
+    }
+
+    if ((removeIcon || req.file) && cohort.icon_filename && cohort.icon_filename !== iconFilename) {
+      removeFileIfExists(resolveInside(COHORT_ICONS_DIR, cohort.icon_filename));
+    }
+
+    const updated = getCohortBySlug(newSlug);
+    const students = getStudentsByCohort(updated);
+    const regeneration = students.length ? await regenerateStudents(students) : null;
+    res.json({
+      cohort: serializeCohort(updated, students.length),
+      oldSlug,
+      slugChanged,
+      regeneration,
+    });
+  } catch (error) {
+    res.status(400).json({ error: error.message || 'Could not update cohort.' });
+  }
 });
 
 app.get('/api/settings/accepting-response', (req, res) => {
+  const cohort = getCohortFromRequest(req);
+  if (!cohort) {
+    sendCohortNotFound(res);
+    return;
+  }
+
   res.json({
-    acceptingResponse: isResponseClosed(),
+    acceptingResponse: isCohortResponseClosed(cohort),
+    cohort: serializeCohort(cohort),
   });
 });
 
 app.post('/api/exports/settings/accepting-response', express.json(), (req, res) => {
+  const cohort = getCohortFromRequest(req);
+  if (!cohort) {
+    sendCohortNotFound(res);
+    return;
+  }
+
   const acceptingResponse = Boolean(req.body?.acceptingResponse);
-  setSetting('accepting_response_closed', acceptingResponse ? 'true' : 'false');
+  db.prepare(`
+    UPDATE cohorts
+    SET accepting_response_closed = ?, updated_at = ?
+    WHERE id = ?
+  `).run(acceptingResponse ? 1 : 0, new Date().toISOString(), cohort.id);
 
   res.json({
     acceptingResponse,
+    cohort: serializeCohort(getCohortBySlug(cohort.slug)),
+  });
+});
+
+app.post('/api/exports/cohorts/:slug/settings/accepting-response', express.json(), (req, res) => {
+  req.query.cohortSlug = req.params.slug;
+  const cohort = getCohortFromRequest(req);
+  if (!cohort) {
+    sendCohortNotFound(res);
+    return;
+  }
+
+  const acceptingResponse = Boolean(req.body?.acceptingResponse);
+  db.prepare(`
+    UPDATE cohorts
+    SET accepting_response_closed = ?, updated_at = ?
+    WHERE id = ?
+  `).run(acceptingResponse ? 1 : 0, new Date().toISOString(), cohort.id);
+
+  res.json({
+    acceptingResponse,
+    cohort: serializeCohort(getCohortBySlug(cohort.slug)),
   });
 });
 
 app.get('/api/exports/count', (req, res) => {
-  const { program, sesi } = getProgramSesi(req.query);
-  const row = db.prepare(`
-    SELECT COUNT(*) AS count
-    FROM students
-    WHERE program = ? AND sesi = ?
-  `).get(program, sesi);
+  const cohort = getCohortFromRequest(req);
+  if (!cohort) {
+    sendCohortNotFound(res);
+    return;
+  }
+
+  const row = db.prepare('SELECT COUNT(*) AS count FROM students WHERE cohort_id = ?').get(cohort.id);
 
   res.json({
     count: row.count,
-    program,
-    sesi,
+    program: cohort.program,
+    sesi: cohort.sesi,
+    cohortSlug: cohort.slug,
   });
 });
 
 app.get('/api/exports/records', (req, res) => {
-  const { program, sesi } = getProgramSesi(req.query);
-  const students = getStudents(program, sesi);
+  const cohort = getCohortFromRequest(req);
+  if (!cohort) {
+    sendCohortNotFound(res);
+    return;
+  }
+
+  const students = getStudentsByCohort(cohort);
 
   res.json({
-    records: students.map((student, index) => ({
-      number: index + 1,
-      name: student.name,
-      matrixNumber: student.matrix_number,
-      icNumber: student.ic_number,
-    })),
+    records: serializeStudentRecords(students),
     count: students.length,
-    program,
-    sesi,
+    program: cohort.program,
+    sesi: cohort.sesi,
+    cohortSlug: cohort.slug,
   });
 });
 
 app.get('/api/exports/dataset-summary', (req, res) => {
-  const { program, sesi } = getProgramSesi(req.query);
-  res.json(getDatasetSummary(program, sesi));
+  const cohort = getCohortFromRequest(req);
+  if (!cohort) {
+    sendCohortNotFound(res);
+    return;
+  }
+
+  res.json(getDatasetSummaryForCohort(cohort));
 });
 
 app.post('/api/exports/regenerate', async (req, res) => {
-  const { program, sesi } = getProgramSesi(req.query);
-  const students = getStudents(program, sesi);
+  const cohort = getCohortFromRequest(req);
+  if (!cohort) {
+    sendCohortNotFound(res);
+    return;
+  }
+
+  const students = getStudentsByCohort(cohort);
 
   if (students.length === 0) {
     res.status(404).json({
       error: 'No matching records found.',
-      program,
-      sesi,
+      program: cohort.program,
+      sesi: cohort.sesi,
+      cohortSlug: cohort.slug,
     });
     return;
   }
@@ -969,13 +1570,20 @@ app.post('/api/exports/regenerate', async (req, res) => {
   const result = await regenerateStudents(students);
   res.json({
     ...result,
-    program,
-    sesi,
+    program: cohort.program,
+    sesi: cohort.sesi,
+    cohortSlug: cohort.slug,
   });
 });
 
 app.post('/api/exports/records/:icNumber/regenerate', async (req, res) => {
   const icNumber = String(req.params.icNumber || '').trim();
+  const cohort = getCohortFromRequest(req);
+
+  if (!cohort) {
+    sendCohortNotFound(res);
+    return;
+  }
 
   if (!VALID_IC_PATTERN.test(icNumber)) {
     res.status(400).json({ error: 'Invalid IC number format.' });
@@ -985,6 +1593,11 @@ app.post('/api/exports/records/:icNumber/regenerate', async (req, res) => {
   const student = getStudent(icNumber);
   if (!student) {
     res.status(404).json({ error: 'Student not found.' });
+    return;
+  }
+
+  if (!studentBelongsToCohort(student, cohort)) {
+    res.status(404).json({ error: 'Student not found in this cohort.' });
     return;
   }
 
@@ -993,10 +1606,14 @@ app.post('/api/exports/records/:icNumber/regenerate', async (req, res) => {
 });
 
 app.post('/api/exports/dataset-restore-summary', restoreUpload.single('backup'), async (req, res) => {
-  const { program, sesi } = getProgramSesi(req.query);
+  const cohort = getCohortFromRequest(req);
+  if (!cohort) {
+    sendCohortNotFound(res);
+    return;
+  }
 
   try {
-    const parsed = await parseDatasetBackup(req.file, program, sesi);
+    const parsed = await parseDatasetBackup(req.file, cohort.program, cohort.sesi);
     res.json(parsed.summary);
   } catch (error) {
     res.status(400).json({ error: error.message || 'Could not read backup.' });
@@ -1004,14 +1621,18 @@ app.post('/api/exports/dataset-restore-summary', restoreUpload.single('backup'),
 });
 
 app.post('/api/exports/dataset-restore', restoreUpload.single('backup'), async (req, res) => {
-  const { program, sesi } = getProgramSesi(req.query);
+  const cohort = getCohortFromRequest(req);
+  if (!cohort) {
+    sendCohortNotFound(res);
+    return;
+  }
 
   try {
-    const parsed = await parseDatasetBackup(req.file, program, sesi);
-    await restoreCohortBackup(parsed, program, sesi);
+    const parsed = await parseDatasetBackup(req.file, cohort.program, cohort.sesi);
+    await restoreCohortBackup(parsed, cohort.program, cohort.sesi);
     res.json({
       restored: true,
-      ...getDatasetSummary(program, sesi),
+      ...getDatasetSummaryForCohort(cohort),
     });
   } catch (error) {
     res.status(400).json({ error: error.message || 'Could not restore backup.' });
@@ -1020,6 +1641,12 @@ app.post('/api/exports/dataset-restore', restoreUpload.single('backup'), async (
 
 app.delete('/api/exports/records/:icNumber', (req, res) => {
   const icNumber = String(req.params.icNumber || '').trim();
+  const cohort = getCohortFromRequest(req);
+
+  if (!cohort) {
+    sendCohortNotFound(res);
+    return;
+  }
 
   if (!VALID_IC_PATTERN.test(icNumber)) {
     res.status(400).json({ error: 'Invalid IC number format.' });
@@ -1029,6 +1656,11 @@ app.delete('/api/exports/records/:icNumber', (req, res) => {
   const student = getStudent(icNumber);
   if (!student) {
     res.status(404).json({ error: 'Student not found.' });
+    return;
+  }
+
+  if (!studentBelongsToCohort(student, cohort)) {
+    res.status(404).json({ error: 'Student not found in this cohort.' });
     return;
   }
 
@@ -1054,6 +1686,12 @@ app.delete('/api/exports/records/:icNumber', (req, res) => {
 app.get('/api/exports/records/:icNumber/:side', (req, res) => {
   const icNumber = String(req.params.icNumber || '').trim();
   const side = String(req.params.side || '').trim();
+  const cohort = getCohortFromRequest(req);
+
+  if (!cohort) {
+    sendCohortNotFound(res);
+    return;
+  }
 
   if (!VALID_IC_PATTERN.test(icNumber)) {
     res.status(400).json({ error: 'Invalid IC number format.' });
@@ -1071,6 +1709,11 @@ app.get('/api/exports/records/:icNumber/:side', (req, res) => {
     return;
   }
 
+  if (!studentBelongsToCohort(student, cohort)) {
+    res.status(404).json({ error: 'Student not found in this cohort.' });
+    return;
+  }
+
   const cardPath = getExportCardPath(student, side);
   if (!cardPath || !fs.existsSync(cardPath)) {
     res.status(404).json({ error: 'Card image not found.' });
@@ -1082,6 +1725,12 @@ app.get('/api/exports/records/:icNumber/:side', (req, res) => {
 
 app.get('/api/students/:icNumber', (req, res) => {
   const icNumber = String(req.params.icNumber || '').trim();
+  const cohort = getCohortFromRequest(req);
+
+  if (!cohort) {
+    sendCohortNotFound(res);
+    return;
+  }
 
   if (!VALID_IC_PATTERN.test(icNumber)) {
     res.status(400).json({ error: 'Invalid IC number format.' });
@@ -1091,6 +1740,15 @@ app.get('/api/students/:icNumber', (req, res) => {
   const student = getStudent(icNumber);
   if (!student) {
     res.status(404).json({ error: 'Student not found.' });
+    return;
+  }
+
+  if (!studentBelongsToCohort(student, cohort)) {
+    res.status(409).json({
+      error: 'This IC number is already saved in another cohort.',
+      existingProgram: student.program,
+      existingSesi: student.sesi,
+    });
     return;
   }
 
@@ -1129,6 +1787,12 @@ app.get('/api/students/:icNumber/photo', (req, res) => {
 app.get('/api/students/:icNumber/card/:side', (req, res) => {
   const icNumber = String(req.params.icNumber || '').trim();
   const side = String(req.params.side || '').trim();
+  const cohort = getCohortFromRequest(req);
+
+  if (!cohort) {
+    sendCohortNotFound(res);
+    return;
+  }
 
   if (!VALID_IC_PATTERN.test(icNumber)) {
     res.status(400).json({ error: 'Invalid IC number format.' });
@@ -1143,6 +1807,11 @@ app.get('/api/students/:icNumber/card/:side', (req, res) => {
   const student = getStudent(icNumber);
   if (!student) {
     res.status(404).json({ error: 'Student not found.' });
+    return;
+  }
+
+  if (!studentBelongsToCohort(student, cohort)) {
+    res.status(404).json({ error: 'Student not found in this cohort.' });
     return;
   }
 
@@ -1158,6 +1827,12 @@ app.get('/api/students/:icNumber/card/:side', (req, res) => {
 app.get('/api/students/:icNumber/card/:side/thumbnail', async (req, res) => {
   const icNumber = String(req.params.icNumber || '').trim();
   const side = String(req.params.side || '').trim();
+  const cohort = getCohortFromRequest(req);
+
+  if (!cohort) {
+    sendCohortNotFound(res);
+    return;
+  }
 
   if (!VALID_IC_PATTERN.test(icNumber)) {
     res.status(400).json({ error: 'Invalid IC number format.' });
@@ -1172,6 +1847,11 @@ app.get('/api/students/:icNumber/card/:side/thumbnail', async (req, res) => {
   const student = getStudent(icNumber);
   if (!student) {
     res.status(404).json({ error: 'Student not found.' });
+    return;
+  }
+
+  if (!studentBelongsToCohort(student, cohort)) {
+    res.status(404).json({ error: 'Student not found in this cohort.' });
     return;
   }
 
@@ -1190,19 +1870,20 @@ app.get('/api/students/:icNumber/card/:side/thumbnail', async (req, res) => {
 });
 
 app.get('/api/students/records/cohort', (req, res) => {
-  const { program, sesi } = getProgramSesi(req.query);
-  const students = getStudents(program, sesi);
+  const cohort = getCohortFromRequest(req);
+  if (!cohort) {
+    sendCohortNotFound(res);
+    return;
+  }
+
+  const students = getStudentsByCohort(cohort);
 
   res.json({
-    records: students.map((student, index) => ({
-      number: index + 1,
-      name: student.name,
-      matrixNumber: student.matrix_number,
-      icNumber: student.ic_number,
-    })),
+    records: serializeStudentRecords(students),
     count: students.length,
-    program,
-    sesi,
+    program: cohort.program,
+    sesi: cohort.sesi,
+    cohortSlug: cohort.slug,
   });
 });
 
@@ -1212,7 +1893,13 @@ app.post('/api/students', upload.fields([
   { name: 'back', maxCount: 1 },
 ]), (req, res) => {
   try {
-    if (isResponseClosed()) {
+    const cohort = getCohortFromRequest(req);
+    if (!cohort) {
+      res.status(404).json({ error: 'Cohort not found.' });
+      return;
+    }
+
+    if (isCohortResponseClosed(cohort)) {
       res.status(403).json({ error: 'Responses closed. Please contact admin.' });
       return;
     }
@@ -1220,8 +1907,8 @@ app.post('/api/students', upload.fields([
     const icNumber = String(req.body.icNumber || '').trim();
     const name = String(req.body.name || '').trim().toUpperCase();
     const matrixNumber = String(req.body.matrixNumber || '').trim().toUpperCase();
-    const program = String(req.body.program || DEFAULT_PROGRAM).trim().toUpperCase();
-    const sesi = String(req.body.sesi || DEFAULT_SESI).trim().toUpperCase();
+    const program = cohort.program;
+    const sesi = cohort.sesi;
 
     if (!VALID_IC_PATTERN.test(icNumber)) {
       res.status(400).json({ error: 'Invalid IC number format.' });
@@ -1239,6 +1926,11 @@ app.post('/api/students', upload.fields([
     }
 
     const existing = getStudent(icNumber);
+    if (existing && !studentBelongsToCohort(existing, cohort)) {
+      res.status(409).json({ error: 'This IC number is already saved in another cohort.' });
+      return;
+    }
+
     const photo = req.files?.photo?.[0] || null;
     const front = req.files?.front?.[0] || null;
     const back = req.files?.back?.[0] || null;
@@ -1269,7 +1961,7 @@ app.post('/api/students', upload.fields([
     }
 
     const icSlug = stripIcHyphens(icNumber);
-    const cohortSlug = getCohortSlug(program, sesi);
+    const cohortSlug = cohort.slug;
     const cohortExportDir = path.join(EXPORTS_DIR, cohortSlug);
     const frontFilename = `${icSlug}_front.jpg`;
     const backFilename = `${icSlug}_back.jpg`;
@@ -1281,12 +1973,13 @@ app.post('/api/students', upload.fields([
     const now = new Date().toISOString();
     db.prepare(`
       INSERT INTO students (
-        ic_number, name, matrix_number, program, sesi,
+        ic_number, cohort_id, name, matrix_number, program, sesi,
         photo_filename, front_filename, back_filename,
         created_at, updated_at
       )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(ic_number) DO UPDATE SET
+        cohort_id = excluded.cohort_id,
         name = excluded.name,
         matrix_number = excluded.matrix_number,
         program = excluded.program,
@@ -1297,6 +1990,7 @@ app.post('/api/students', upload.fields([
         updated_at = excluded.updated_at
     `).run(
       icNumber,
+      cohort.id,
       name,
       matrixNumber,
       program,
@@ -1315,6 +2009,7 @@ app.post('/api/students', upload.fields([
       frontFilename,
       backFilename,
       exportFolder: cohortSlug,
+      cohortSlug,
     });
   } catch (error) {
     res.status(500).json({ error: error.message || 'Could not save student.' });
@@ -1322,19 +2017,25 @@ app.post('/api/students', upload.fields([
 });
 
 app.get('/api/exports/cards.zip', (req, res) => {
-  const { program, sesi } = getProgramSesi(req.query);
-  const students = getStudents(program, sesi);
+  const cohort = getCohortFromRequest(req);
+  if (!cohort) {
+    sendCohortNotFound(res);
+    return;
+  }
+
+  const students = getStudentsByCohort(cohort);
 
   if (students.length === 0) {
     res.status(404).json({
       error: 'No matching records found.',
-      program,
-      sesi,
+      program: cohort.program,
+      sesi: cohort.sesi,
+      cohortSlug: cohort.slug,
     });
     return;
   }
 
-  const cohortSlug = getCohortSlug(program, sesi);
+  const cohortSlug = cohort.slug;
   const cohortExportDir = path.join(EXPORTS_DIR, cohortSlug);
   let skippedFiles = 0;
   const entries = [];
@@ -1380,19 +2081,25 @@ app.get('/api/exports/cards.zip', (req, res) => {
 });
 
 app.get('/api/exports/dataset-backup.zip', (req, res) => {
-  const { program, sesi } = getProgramSesi(req.query);
-  const students = getStudents(program, sesi);
+  const cohort = getCohortFromRequest(req);
+  if (!cohort) {
+    sendCohortNotFound(res);
+    return;
+  }
+
+  const students = getStudentsByCohort(cohort);
 
   if (students.length === 0) {
     res.status(404).json({
       error: 'No matching records found.',
-      program,
-      sesi,
+      program: cohort.program,
+      sesi: cohort.sesi,
+      cohortSlug: cohort.slug,
     });
     return;
   }
 
-  const manifest = getBackupManifest(program, sesi);
+  const manifest = getBackupManifest(cohort.program, cohort.sesi);
   const cohortExportDir = path.join(EXPORTS_DIR, manifest.cohortSlug);
 
   res.setHeader('Content-Type', 'application/zip');
