@@ -161,7 +161,7 @@ function renderCohorts(cohorts) {
     editLink.className = 'cohort-edit-button';
     editLink.href = `/admin/cohorts/${encodeURIComponent(cohort.slug)}/edit`;
     editLink.setAttribute('aria-label', `Edit cohort ${cohort.program}`);
-    editLink.innerHTML = '<i data-lucide="pencil" aria-hidden="true"></i>';
+    editLink.innerHTML = '<i data-lucide="settings" aria-hidden="true"></i>';
     title.textContent = cohort.program;
     sesi.textContent = cohort.sesi;
     meta.textContent = `${cohort.recordCount || 0} saved record${Number(cohort.recordCount || 0) === 1 ? '' : 's'}`;
