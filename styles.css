@@ -541,6 +541,58 @@ h1 {
   opacity: 0.72;
 }
 
+.template-settings {
+  display: grid;
+  gap: 12px;
+  border: 1px solid rgba(15, 142, 163, 0.16);
+  border-radius: 12px;
+  padding: 12px;
+  background: rgba(240, 248, 250, 0.76);
+}
+
+.template-setting-grid {
+  display: grid;
+  gap: 10px;
+}
+
+.template-setting {
+  display: grid;
+  gap: 10px;
+  border: 1px solid rgba(116, 137, 158, 0.18);
+  border-radius: 10px;
+  padding: 10px;
+  background: rgba(255, 255, 255, 0.72);
+}
+
+.template-setting strong,
+.template-setting small {
+  display: block;
+}
+
+.template-setting strong {
+  color: var(--text);
+  font-size: 14px;
+}
+
+.template-setting small {
+  margin-top: 3px;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.template-actions {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.template-actions .secondary-action {
+  width: auto;
+  min-height: 40px;
+  padding: 0 10px;
+}
+
 .records-table-wrap {
   overflow-x: auto;
   border: 1px solid var(--line);
@@ -1612,6 +1664,7 @@ h1 {
   }
 
   .export-actions,
+  .template-actions,
   .modal-actions {
     grid-template-columns: 1fr;
   }

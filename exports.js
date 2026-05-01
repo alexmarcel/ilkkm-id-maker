@@ -2,6 +2,11 @@ const elements = {
   program: document.querySelector('#exportProgram'),
   sesi: document.querySelector('#exportSesi'),
   acceptingResponseToggle: document.querySelector('#acceptingResponseToggle'),
+  frontTemplateStatus: document.querySelector('#frontTemplateStatus'),
+  backTemplateStatus: document.querySelector('#backTemplateStatus'),
+  frontTemplateInput: document.querySelector('#frontTemplateInput'),
+  backTemplateInput: document.querySelector('#backTemplateInput'),
+  templateStatus: document.querySelector('#templateStatus'),
   count: document.querySelector('#exportCount'),
   recordsTableBody: document.querySelector('#recordsTableBody'),
   downloadZip: document.querySelector('#downloadZip'),
@@ -56,6 +61,7 @@ async function loadCohort() {
   elements.program.disabled = true;
   elements.sesi.disabled = true;
   elements.generatorLink.href = `/cohorts/${encodeURIComponent(result.slug)}`;
+  renderTemplateSettings();
 }
 
 function getFilters() {
@@ -70,6 +76,17 @@ function buildQuery(filters) {
   const params = new URLSearchParams();
   params.set('cohortSlug', filters.cohortSlug);
   return params.toString();
+}
+
+async function getResponseError(response, fallback) {
+  const contentType = response.headers.get('content-type') || '';
+  if (contentType.includes('application/json')) {
+    const result = await response.json().catch(() => ({}));
+    return result.error || fallback;
+  }
+
+  const text = await response.text().catch(() => '');
+  return text.trim() || fallback;
 }
 
 function setLoading(message) {
@@ -207,6 +224,55 @@ function setStatus(message, type = '') {
   }
 }
 
+function setTemplateStatus(message, type = '') {
+  const text = elements.templateStatus.querySelector('span');
+  const icon = elements.templateStatus.querySelector('i, svg');
+  text.textContent = message;
+  elements.templateStatus.classList.remove('error', 'ready', 'loading', 'warning');
+  if (type) {
+    elements.templateStatus.classList.add(type);
+  }
+  icon?.setAttribute('data-lucide', type === 'error' ? 'circle-alert' : type === 'ready' ? 'circle-check' : type === 'warning' ? 'triangle-alert' : 'info');
+  refreshIcons();
+}
+
+function getTemplateState(side) {
+  if (side === 'front') {
+    return {
+      status: elements.frontTemplateStatus,
+      input: elements.frontTemplateInput,
+      url: currentCohort?.frontTemplateUrl || '',
+      filename: currentCohort?.frontTemplateFilename || '',
+      defaultName: 'front.jpg',
+    };
+  }
+
+  return {
+    status: elements.backTemplateStatus,
+    input: elements.backTemplateInput,
+    url: currentCohort?.backTemplateUrl || '',
+    filename: currentCohort?.backTemplateFilename || '',
+    defaultName: 'back.jpg',
+  };
+}
+
+function renderTemplateSettings() {
+  ['front', 'back'].forEach((side) => {
+    const state = getTemplateState(side);
+    const hasCustom = Boolean(state.url);
+    state.status.textContent = hasCustom ? `Using custom ${state.filename}` : `Using default ${state.defaultName}`;
+
+    document.querySelectorAll(`[data-template-preview="${side}"], [data-template-remove="${side}"]`).forEach((button) => {
+      button.disabled = !hasCustom;
+    });
+
+    const uploadButton = document.querySelector(`[data-template-upload="${side}"] span`);
+    if (uploadButton) {
+      uploadButton.textContent = hasCustom ? 'Replace' : 'Upload';
+    }
+  });
+}
+
 function refreshIcons() {
   if (window.lucide) {
     window.lucide.createIcons();
@@ -294,6 +360,85 @@ function downloadZip() {
     setStatus('Download started.', 'ready');
     elements.downloadZip.disabled = currentCount === 0;
   }, 900);
+}
+
+function chooseTemplateFile(side) {
+  const state = getTemplateState(side);
+  state.input.value = '';
+  state.input.click();
+}
+
+async function uploadTemplate(side) {
+  const state = getTemplateState(side);
+  const file = state.input.files?.[0] || null;
+  if (!file) {
+    return;
+  }
+
+  if (!['image/jpeg', 'image/png'].includes(file.type)) {
+    setTemplateStatus('Background must be a JPG or PNG image.', 'error');
+    state.input.value = '';
+    return;
+  }
+
+  const payload = new FormData();
+  payload.set(`${side}Template`, file, file.name);
+  setTemplateStatus(`Uploading ${side} background...`);
+
+  try {
+    const response = await fetch(`/api/exports/cohorts/${encodeURIComponent(currentCohort.slug)}/templates`, {
+      method: 'POST',
+      body: payload,
+    });
+    if (!response.ok) {
+      throw new Error(await getResponseError(response, 'Could not update background.'));
+    }
+    const result = await response.json().catch(() => ({}));
+
+    currentCohort = result.cohort;
+    renderTemplateSettings();
+    setTemplateStatus('Background saved. Run Regenerate Cards to apply it to saved records.', 'warning');
+  } catch (error) {
+    setTemplateStatus(error.message || 'Could not update background.', 'error');
+  } finally {
+    state.input.value = '';
+  }
+}
+
+function previewTemplate(side) {
+  const state = getTemplateState(side);
+  if (!state.url) {
+    return;
+  }
+
+  elements.cardModalTitle.textContent = `${side === 'front' ? 'Front' : 'Back'} Background`;
+  elements.cardModalImage.alt = `${side === 'front' ? 'Front' : 'Back'} card background`;
+  elements.cardModalImage.src = `${state.url}&preview=${Date.now()}`;
+  elements.cardModal.hidden = false;
+  document.body.classList.add('modal-open');
+}
+
+async function removeTemplate(side) {
+  if (!window.confirm(`Remove the custom ${side} background and use the default template?`)) {
+    return;
+  }
+
+  setTemplateStatus(`Removing ${side} background...`);
+  try {
+    const response = await fetch(`/api/exports/cohorts/${encodeURIComponent(currentCohort.slug)}/templates/${encodeURIComponent(side)}`, {
+      method: 'DELETE',
+    });
+    if (!response.ok) {
+      throw new Error(await getResponseError(response, 'Could not remove background.'));
+    }
+    const result = await response.json().catch(() => ({}));
+
+    currentCohort = result.cohort;
+    renderTemplateSettings();
+    setTemplateStatus('Background removed. Run Regenerate Cards to apply the default template to saved records.', 'warning');
+  } catch (error) {
+    setTemplateStatus(error.message || 'Could not remove background.', 'error');
+  }
 }
 
 async function fetchDatasetSummary() {
@@ -742,6 +887,17 @@ elements.backupDataset.addEventListener('click', showBackupModal);
 elements.regenerateCards.addEventListener('click', showRegenerateModal);
 elements.restoreDataset.addEventListener('click', chooseRestoreFile);
 elements.restoreDatasetInput.addEventListener('change', showRestoreModal);
+document.querySelectorAll('[data-template-upload]').forEach((button) => {
+  button.addEventListener('click', () => chooseTemplateFile(button.dataset.templateUpload));
+});
+document.querySelectorAll('[data-template-preview]').forEach((button) => {
+  button.addEventListener('click', () => previewTemplate(button.dataset.templatePreview));
+});
+document.querySelectorAll('[data-template-remove]').forEach((button) => {
+  button.addEventListener('click', () => removeTemplate(button.dataset.templateRemove));
+});
+elements.frontTemplateInput.addEventListener('change', () => uploadTemplate('front'));
+elements.backTemplateInput.addEventListener('change', () => uploadTemplate('back'));
 elements.confirmDatasetAction.addEventListener('click', confirmDatasetAction);
 elements.closeDatasetModal.addEventListener('click', closeDatasetModal);
 elements.cancelDatasetAction.addEventListener('click', closeDatasetModal);

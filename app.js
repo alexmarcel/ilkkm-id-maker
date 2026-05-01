@@ -749,6 +749,11 @@ function getCohortQuery() {
   return buildQuery({ cohortSlug: state.cohort?.slug || getCohortSlugFromPath() });
 }
 
+function getTemplateUrl(side) {
+  const customUrl = side === 'front' ? state.cohort?.frontTemplateUrl : state.cohort?.backTemplateUrl;
+  return customUrl || `/${side}.jpg`;
+}
+
 async function loadCohort() {
   const slug = getCohortSlugFromPath();
   if (!slug) {
@@ -1110,8 +1115,8 @@ async function init() {
 
   try {
     const [frontTemplate, backTemplate] = await Promise.all([
-      loadImage('/front.jpg'),
-      loadImage('/back.jpg'),
+      loadImage(getTemplateUrl('front')),
+      loadImage(getTemplateUrl('back')),
     ]);
 
     state.templates.front = frontTemplate;

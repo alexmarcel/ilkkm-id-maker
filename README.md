@@ -22,6 +22,7 @@ Browser-based student ID card generator with a Node/SQLite backend for managing 
 - Grid Preview shows the current cohort in a responsive card grid with front/back flip preview.
 - Grid thumbnails are generated at `720px` wide and cached for faster loading.
 - Protected Exports page lists records, previews front/back cards in modals, deletes rows, controls response status, and downloads all cards as a ZIP.
+- Each cohort can use custom front/back card background images from its Exports settings.
 - When responses are closed, the generator disables the form and shows a centered overlay on the card preview.
 
 ## Running Locally
@@ -104,6 +105,7 @@ Each cohort Exports page supports:
 - Cohort dataset backup and restore with confirmation summaries.
 - Cohort and per-row card regeneration from saved records/photos.
 - Accepting response setting to open or close the main generator form.
+- Card background settings to upload, preview, or remove custom front/back templates for that cohort.
 
 ZIP structure:
 
@@ -123,12 +125,13 @@ Backup downloads a ZIP containing:
 - `students.json`
 - matching files in `photos/`
 - matching files in `exports/{cohort_slug}/`
+- custom files in `templates/` when the cohort uses custom card backgrounds
 
 Restore validates the uploaded ZIP before changing data. It rejects wrong Program/Sesi backups, invalid student rows, unsafe ZIP paths, missing files, and IC numbers that already belong to another Program/Sesi. Confirmed restore replaces only the selected cohort; other cohorts are left unchanged.
 
 ## Regenerating Cards
 
-The Exports page can regenerate generated front/back JPGs from saved SQLite records, saved cropped photos, `front.jpg`, `back.jpg`, and the bundled Liberation Sans Bold font.
+The Exports page can regenerate generated front/back JPGs from saved SQLite records, saved cropped photos, the cohort's custom backgrounds or default `front.jpg` / `back.jpg`, and the bundled Liberation Sans Bold font.
 
 Use:
 
@@ -136,6 +139,8 @@ Use:
 - The row refresh icon to regenerate one student.
 
 If a saved photo is missing, that record is skipped and reported instead of stopping the whole cohort job.
+
+Changing a cohort card background does not regenerate existing saved cards automatically. Run `Regenerate Cards` after uploading or removing a custom background.
 
 ## Grid Preview
 

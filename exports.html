@@ -40,6 +40,63 @@
             <input id="acceptingResponseToggle" type="checkbox" role="switch">
           </label>
 
+          <section class="template-settings" aria-label="Card background settings">
+            <div class="records-card-header">
+              <div>
+                <h2>Card Backgrounds</h2>
+                <p class="export-count">Upload cohort-specific front and back card backgrounds.</p>
+              </div>
+            </div>
+            <div class="template-setting-grid">
+              <div class="template-setting" data-template-side="front">
+                <div>
+                  <strong>Front Background</strong>
+                  <small id="frontTemplateStatus">Using default front.jpg</small>
+                </div>
+                <div class="template-actions">
+                  <button class="secondary-action template-upload-button" type="button" data-template-upload="front">
+                    <i data-lucide="image-up" aria-hidden="true"></i>
+                    <span>Upload</span>
+                  </button>
+                  <button class="secondary-action template-preview-button" type="button" data-template-preview="front" disabled>
+                    <i data-lucide="eye" aria-hidden="true"></i>
+                    <span>Preview</span>
+                  </button>
+                  <button class="secondary-action danger-action template-remove-button" type="button" data-template-remove="front" disabled>
+                    <i data-lucide="trash-2" aria-hidden="true"></i>
+                    <span>Remove</span>
+                  </button>
+                  <input id="frontTemplateInput" type="file" accept="image/jpeg,image/png" hidden>
+                </div>
+              </div>
+              <div class="template-setting" data-template-side="back">
+                <div>
+                  <strong>Back Background</strong>
+                  <small id="backTemplateStatus">Using default back.jpg</small>
+                </div>
+                <div class="template-actions">
+                  <button class="secondary-action template-upload-button" type="button" data-template-upload="back">
+                    <i data-lucide="image-up" aria-hidden="true"></i>
+                    <span>Upload</span>
+                  </button>
+                  <button class="secondary-action template-preview-button" type="button" data-template-preview="back" disabled>
+                    <i data-lucide="eye" aria-hidden="true"></i>
+                    <span>Preview</span>
+                  </button>
+                  <button class="secondary-action danger-action template-remove-button" type="button" data-template-remove="back" disabled>
+                    <i data-lucide="trash-2" aria-hidden="true"></i>
+                    <span>Remove</span>
+                  </button>
+                  <input id="backTemplateInput" type="file" accept="image/jpeg,image/png" hidden>
+                </div>
+              </div>
+            </div>
+            <p class="save-status" id="templateStatus" role="status">
+              <i data-lucide="info" aria-hidden="true"></i>
+              <span>Background changes apply after running Regenerate Cards.</span>
+            </p>
+          </section>
+
           <p class="export-count" id="exportCount" role="status">Loading records...</p>
 
           <div class="export-actions">

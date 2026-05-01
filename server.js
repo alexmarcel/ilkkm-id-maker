@@ -18,6 +18,7 @@ const EXPORTS_DIR = process.env.EXPORTS_DIR || path.join(DATA_DIR, 'exports');
 const PHOTOS_DIR = process.env.PHOTOS_DIR || path.join(DATA_DIR, 'photos');
 const THUMBNAILS_DIR = process.env.THUMBNAILS_DIR || path.join(DATA_DIR, 'thumbnails');
 const COHORT_ICONS_DIR = process.env.COHORT_ICONS_DIR || path.join(DATA_DIR, 'cohort-icons');
+const COHORT_TEMPLATES_DIR = process.env.COHORT_TEMPLATES_DIR || path.join(DATA_DIR, 'cohort-templates');
 const DEFAULT_PROGRAM = 'DIPLOMA KEJURURAWATAN';
 const DEFAULT_SESI = 'SESI JANUARI 2026 - DISEMBER 2028';
 const EXPORTS_USERNAME = process.env.EXPORTS_USERNAME || 'admin';
@@ -99,6 +100,7 @@ fs.mkdirSync(EXPORTS_DIR, { recursive: true });
 fs.mkdirSync(PHOTOS_DIR, { recursive: true });
 fs.mkdirSync(THUMBNAILS_DIR, { recursive: true });
 fs.mkdirSync(COHORT_ICONS_DIR, { recursive: true });
+fs.mkdirSync(COHORT_TEMPLATES_DIR, { recursive: true });
 
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -124,6 +126,14 @@ const cohortIconUpload = multer({
   },
 });
 
+const cohortTemplateUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: {
+    fileSize: 20 * 1024 * 1024,
+    files: 2,
+  },
+});
+
 const db = new Database(DB_PATH);
 db.pragma('journal_mode = WAL');
 db.exec(`
@@ -133,6 +143,8 @@ db.exec(`
     program TEXT NOT NULL,
     sesi TEXT NOT NULL,
     icon_filename TEXT,
+    front_template_filename TEXT,
+    back_template_filename TEXT,
     accent_color TEXT NOT NULL DEFAULT '#0f8ea3',
     accepting_response_closed INTEGER NOT NULL DEFAULT 0,
     created_at TEXT NOT NULL,
@@ -187,6 +199,12 @@ if (!cohortColumns.includes('icon_filename')) {
 }
 if (!cohortColumns.includes('accent_color')) {
   db.exec(`ALTER TABLE cohorts ADD COLUMN accent_color TEXT NOT NULL DEFAULT '${DEFAULT_COHORT_COLOR}'`);
+}
+if (!cohortColumns.includes('front_template_filename')) {
+  db.exec('ALTER TABLE cohorts ADD COLUMN front_template_filename TEXT');
+}
+if (!cohortColumns.includes('back_template_filename')) {
+  db.exec('ALTER TABLE cohorts ADD COLUMN back_template_filename TEXT');
 }
 
 function getSetting(key, fallback = '') {
@@ -252,6 +270,10 @@ function serializeCohort(cohort, recordCount = null) {
     return null;
   }
 
+  const frontTemplatePath = cohort.front_template_filename ? resolveInside(COHORT_TEMPLATES_DIR, cohort.front_template_filename) : null;
+  const backTemplatePath = cohort.back_template_filename ? resolveInside(COHORT_TEMPLATES_DIR, cohort.back_template_filename) : null;
+  const hasFrontTemplate = Boolean(frontTemplatePath && fs.existsSync(frontTemplatePath));
+  const hasBackTemplate = Boolean(backTemplatePath && fs.existsSync(backTemplatePath));
   const result = {
     id: cohort.id,
     slug: cohort.slug,
@@ -260,6 +282,14 @@ function serializeCohort(cohort, recordCount = null) {
     iconUrl: cohort.icon_filename
       ? `/api/cohorts/${encodeURIComponent(cohort.slug)}/icon?v=${encodeURIComponent(cohort.updated_at || '')}`
       : null,
+    frontTemplateUrl: hasFrontTemplate
+      ? `/api/cohorts/${encodeURIComponent(cohort.slug)}/templates/front?v=${encodeURIComponent(cohort.updated_at || '')}`
+      : null,
+    backTemplateUrl: hasBackTemplate
+      ? `/api/cohorts/${encodeURIComponent(cohort.slug)}/templates/back?v=${encodeURIComponent(cohort.updated_at || '')}`
+      : null,
+    frontTemplateFilename: hasFrontTemplate ? cohort.front_template_filename : null,
+    backTemplateFilename: hasBackTemplate ? cohort.back_template_filename : null,
     accentColor: cohort.accent_color || DEFAULT_COHORT_COLOR,
     acceptingResponse: Boolean(cohort.accepting_response_closed),
     createdAt: cohort.created_at,
@@ -275,16 +305,24 @@ function serializeCohort(cohort, recordCount = null) {
 
 function getCohortBySlug(slug) {
   return db.prepare(`
-    SELECT id, slug, program, sesi, icon_filename, accent_color, accepting_response_closed, created_at, updated_at
+    SELECT id, slug, program, sesi, icon_filename, front_template_filename, back_template_filename, accent_color, accepting_response_closed, created_at, updated_at
     FROM cohorts
     WHERE slug = ?
   `).get(String(slug || '').trim());
 }
 
+function getCohortById(id) {
+  return db.prepare(`
+    SELECT id, slug, program, sesi, icon_filename, front_template_filename, back_template_filename, accent_color, accepting_response_closed, created_at, updated_at
+    FROM cohorts
+    WHERE id = ?
+  `).get(Number(id || 0));
+}
+
 function getCohortByProgramSesi(program, sesi) {
   const normalized = normalizeProgramSesi(program, sesi);
   return db.prepare(`
-    SELECT id, slug, program, sesi, icon_filename, accent_color, accepting_response_closed, created_at, updated_at
+    SELECT id, slug, program, sesi, icon_filename, front_template_filename, back_template_filename, accent_color, accepting_response_closed, created_at, updated_at
     FROM cohorts
     WHERE program = ? AND sesi = ?
   `).get(normalized.program, normalized.sesi);
@@ -384,6 +422,48 @@ async function saveCohortIcon(file, slug) {
 
   writeFileEnsured(path.join(COHORT_ICONS_DIR, filename), iconBuffer);
   return filename;
+}
+
+async function saveCohortTemplate(file, slug, side) {
+  if (!file) {
+    return null;
+  }
+
+  if (!['front', 'back'].includes(side)) {
+    throw new Error('Template side must be front or back.');
+  }
+
+  if (!getPhotoExtension(file.mimetype)) {
+    throw new Error(`${side === 'front' ? 'Front' : 'Back'} background must be a JPG or PNG image.`);
+  }
+
+  const filename = `${slug}_${side}_template.jpg`;
+  const templateBuffer = await normalizeTemplateBuffer(file.buffer, side === 'front' ? 'Front' : 'Back');
+
+  writeFileEnsured(path.join(COHORT_TEMPLATES_DIR, filename), templateBuffer);
+  return filename;
+}
+
+async function normalizeTemplateBuffer(buffer, label) {
+  try {
+    return await sharp(buffer)
+      .resize(TEMPLATE_WIDTH, TEMPLATE_HEIGHT, { fit: 'cover', position: 'centre' })
+      .jpeg({ quality: 95 })
+      .toBuffer();
+  } catch (error) {
+    throw new Error(`${label} background is not a valid image.`);
+  }
+}
+
+function getCohortTemplatePath(cohort, side) {
+  const filename = side === 'front' ? cohort?.front_template_filename : cohort?.back_template_filename;
+  const customPath = filename ? resolveInside(COHORT_TEMPLATES_DIR, filename) : null;
+
+  if (customPath && fs.existsSync(customPath)) {
+    return customPath;
+  }
+
+  return side === 'front' ? FRONT_TEMPLATE_PATH : BACK_TEMPLATE_PATH;
 }
 
 function assertValidJpeg(file, label) {
@@ -538,6 +618,10 @@ function getBackupManifest(program, sesi) {
     program,
     sesi,
     cohortSlug: summary.cohortSlug,
+    templates: {
+      front: cohort.front_template_filename ? path.basename(cohort.front_template_filename) : null,
+      back: cohort.back_template_filename ? path.basename(cohort.back_template_filename) : null,
+    },
     counts: summary.counts,
   };
 }
@@ -696,7 +780,8 @@ function getStudentRenderData(student) {
 async function renderStudentCards(student) {
   const data = getStudentRenderData(student);
   const icSlug = stripIcHyphens(data.ic);
-  const cohortSlug = getCohortSlug(data.program, data.sesi);
+  const renderCohort = getCohortById(student.cohort_id) || getCohortByProgramSesi(data.program, data.sesi);
+  const cohortSlug = renderCohort?.slug || getCohortSlug(data.program, data.sesi);
   const cohortExportDir = path.join(EXPORTS_DIR, cohortSlug);
   const photoPath = resolveInside(PHOTOS_DIR, student.photo_filename);
 
@@ -730,7 +815,7 @@ async function renderStudentCards(student) {
 
   fs.mkdirSync(cohortExportDir, { recursive: true });
 
-  await sharp(FRONT_TEMPLATE_PATH)
+  await sharp(getCohortTemplatePath(renderCohort, 'front'))
     .resize(TEMPLATE_WIDTH, TEMPLATE_HEIGHT)
     .composite([
       { input: photoBuffer, left: photoBox.x, top: photoBox.y },
@@ -739,7 +824,7 @@ async function renderStudentCards(student) {
     .jpeg({ quality: 95 })
     .toFile(frontPath);
 
-  await sharp(BACK_TEMPLATE_PATH)
+  await sharp(getCohortTemplatePath(renderCohort, 'back'))
     .resize(TEMPLATE_WIDTH, TEMPLATE_HEIGHT)
     .composite([{ input: backTextSvg, left: 0, top: 0 }])
     .jpeg({ quality: 95 })
@@ -950,6 +1035,7 @@ async function parseDatasetBackup(file, program, sesi) {
     photos: 0,
     frontCards: 0,
     backCards: 0,
+    templates: 0,
   };
 
   students.forEach((student) => {
@@ -974,9 +1060,27 @@ async function parseDatasetBackup(file, program, sesi) {
     throw new Error('Backup is missing one or more required photo/card files.');
   }
 
+  const templates = {
+    front: manifest.templates?.front ? assertSafeBackupFilename(manifest.templates.front, 'Front background') : null,
+    back: manifest.templates?.back ? assertSafeBackupFilename(manifest.templates.back, 'Back background') : null,
+  };
+
+  if (templates.front && !fileEntries.has(`templates/${templates.front}`)) {
+    missing.templates += 1;
+  }
+
+  if (templates.back && !fileEntries.has(`templates/${templates.back}`)) {
+    missing.templates += 1;
+  }
+
+  if (missing.templates) {
+    throw new Error('Backup is missing one or more custom background files.');
+  }
+
   return {
     manifest,
     students,
+    templates,
     fileEntries,
     summary: {
       program: manifest.program,
@@ -992,6 +1096,7 @@ async function parseDatasetBackup(file, program, sesi) {
         missingPhotos: missing.photos,
         missingFrontCards: missing.frontCards,
         missingBackCards: missing.backCards,
+        templates: Number(Boolean(templates.front)) + Number(Boolean(templates.back)),
       },
     },
   };
@@ -1005,6 +1110,7 @@ async function restoreCohortBackup(parsed, program, sesi) {
   const stagingDir = path.join(DATA_DIR, `.restore-${Date.now()}-${crypto.randomBytes(4).toString('hex')}`);
   const stagedPhotosDir = path.join(stagingDir, 'photos');
   const stagedCardsDir = path.join(stagingDir, 'exports', cohortSlug);
+  const stagedTemplatesDir = path.join(stagingDir, 'templates');
 
   const restoreTransaction = db.transaction((students) => {
     db.prepare('DELETE FROM students WHERE cohort_id = ?').run(cohort.id);
@@ -1036,6 +1142,9 @@ async function restoreCohortBackup(parsed, program, sesi) {
   });
 
   try {
+    const frontTemplateFilename = parsed.templates?.front || null;
+    const backTemplateFilename = parsed.templates?.back || null;
+
     for (const student of parsed.students) {
       const photoFilename = path.basename(student.photo_filename);
       const frontFilename = path.basename(student.front_filename);
@@ -1049,7 +1158,37 @@ async function restoreCohortBackup(parsed, program, sesi) {
       writeFileEnsured(path.join(stagedCardsDir, backFilename), backBuffer);
     }
 
+    if (frontTemplateFilename) {
+      const frontTemplateBuffer = await normalizeTemplateBuffer(
+        await parsed.fileEntries.get(`templates/${frontTemplateFilename}`).buffer(),
+        'Front',
+      );
+      writeFileEnsured(path.join(stagedTemplatesDir, frontTemplateFilename), frontTemplateBuffer);
+    }
+
+    if (backTemplateFilename) {
+      const backTemplateBuffer = await normalizeTemplateBuffer(
+        await parsed.fileEntries.get(`templates/${backTemplateFilename}`).buffer(),
+        'Back',
+      );
+      writeFileEnsured(path.join(stagedTemplatesDir, backTemplateFilename), backTemplateBuffer);
+    }
+
     restoreTransaction(parsed.students);
+
+    if (cohort.front_template_filename && cohort.front_template_filename !== frontTemplateFilename) {
+      removeFileIfExists(resolveInside(COHORT_TEMPLATES_DIR, cohort.front_template_filename));
+    }
+
+    if (cohort.back_template_filename && cohort.back_template_filename !== backTemplateFilename) {
+      removeFileIfExists(resolveInside(COHORT_TEMPLATES_DIR, cohort.back_template_filename));
+    }
+
+    db.prepare(`
+      UPDATE cohorts
+      SET front_template_filename = ?, back_template_filename = ?, updated_at = ?
+      WHERE id = ?
+    `).run(frontTemplateFilename, backTemplateFilename, new Date().toISOString(), cohort.id);
 
     currentStudents.forEach((student) => {
       removeFileIfExists(resolveInside(PHOTOS_DIR, student.photo_filename));
@@ -1070,6 +1209,17 @@ async function restoreCohortBackup(parsed, program, sesi) {
       fs.renameSync(path.join(stagedCardsDir, frontFilename), path.join(cohortExportDir, frontFilename));
       fs.renameSync(path.join(stagedCardsDir, backFilename), path.join(cohortExportDir, backFilename));
     });
+
+    fs.mkdirSync(COHORT_TEMPLATES_DIR, { recursive: true });
+    if (frontTemplateFilename) {
+      removeFileIfExists(resolveInside(COHORT_TEMPLATES_DIR, frontTemplateFilename));
+      fs.renameSync(path.join(stagedTemplatesDir, frontTemplateFilename), path.join(COHORT_TEMPLATES_DIR, frontTemplateFilename));
+    }
+
+    if (backTemplateFilename) {
+      removeFileIfExists(resolveInside(COHORT_TEMPLATES_DIR, backTemplateFilename));
+      fs.renameSync(path.join(stagedTemplatesDir, backTemplateFilename), path.join(COHORT_TEMPLATES_DIR, backTemplateFilename));
+    }
   } catch (error) {
     throw error;
   } finally {
@@ -1199,6 +1349,8 @@ app.get('/api/cohorts', (req, res) => {
       cohorts.program,
       cohorts.sesi,
       cohorts.icon_filename,
+      cohorts.front_template_filename,
+      cohorts.back_template_filename,
       cohorts.accent_color,
       cohorts.accepting_response_closed,
       cohorts.created_at,
@@ -1241,6 +1393,30 @@ app.get('/api/cohorts/:slug/icon', (req, res) => {
 
   res.setHeader('Cache-Control', 'public, max-age=86400');
   res.sendFile(iconPath);
+});
+
+app.get('/api/cohorts/:slug/templates/:side', (req, res) => {
+  const cohort = getCohortBySlug(req.params.slug);
+  const side = String(req.params.side || '').trim().toLowerCase();
+  if (!cohort) {
+    sendCohortNotFound(res);
+    return;
+  }
+
+  if (!['front', 'back'].includes(side)) {
+    res.status(400).json({ error: 'Template side must be front or back.' });
+    return;
+  }
+
+  const filename = side === 'front' ? cohort.front_template_filename : cohort.back_template_filename;
+  const templatePath = filename ? resolveInside(COHORT_TEMPLATES_DIR, filename) : null;
+  if (!templatePath || !fs.existsSync(templatePath)) {
+    res.status(404).json({ error: 'Custom template not found.' });
+    return;
+  }
+
+  res.setHeader('Cache-Control', 'public, max-age=86400');
+  res.sendFile(templatePath);
 });
 
 app.get('/api/game/cards', (req, res) => {
@@ -1445,6 +1621,88 @@ app.patch('/api/exports/cohorts/:slug', cohortIconUpload.single('icon'), async (
   } catch (error) {
     res.status(400).json({ error: error.message || 'Could not update cohort.' });
   }
+});
+
+app.post('/api/exports/cohorts/:slug/templates', cohortTemplateUpload.fields([
+  { name: 'frontTemplate', maxCount: 1 },
+  { name: 'backTemplate', maxCount: 1 },
+]), async (req, res) => {
+  const cohort = getCohortBySlug(req.params.slug);
+  if (!cohort) {
+    sendCohortNotFound(res);
+    return;
+  }
+
+  const frontFile = req.files?.frontTemplate?.[0] || null;
+  const backFile = req.files?.backTemplate?.[0] || null;
+
+  if (!frontFile && !backFile) {
+    res.status(400).json({ error: 'Choose a front or back background image.' });
+    return;
+  }
+
+  try {
+    const frontTemplateFilename = frontFile
+      ? await saveCohortTemplate(frontFile, cohort.slug, 'front')
+      : cohort.front_template_filename;
+    const backTemplateFilename = backFile
+      ? await saveCohortTemplate(backFile, cohort.slug, 'back')
+      : cohort.back_template_filename;
+    const now = new Date().toISOString();
+
+    db.prepare(`
+      UPDATE cohorts
+      SET front_template_filename = ?, back_template_filename = ?, updated_at = ?
+      WHERE id = ?
+    `).run(frontTemplateFilename || null, backTemplateFilename || null, now, cohort.id);
+
+    if (frontFile && cohort.front_template_filename && cohort.front_template_filename !== frontTemplateFilename) {
+      removeFileIfExists(resolveInside(COHORT_TEMPLATES_DIR, cohort.front_template_filename));
+    }
+
+    if (backFile && cohort.back_template_filename && cohort.back_template_filename !== backTemplateFilename) {
+      removeFileIfExists(resolveInside(COHORT_TEMPLATES_DIR, cohort.back_template_filename));
+    }
+
+    const updated = getCohortBySlug(cohort.slug);
+    res.json({
+      cohort: serializeCohort(updated),
+      needsRegeneration: true,
+    });
+  } catch (error) {
+    res.status(400).json({ error: error.message || 'Could not update card backgrounds.' });
+  }
+});
+
+app.delete('/api/exports/cohorts/:slug/templates/:side', (req, res) => {
+  const cohort = getCohortBySlug(req.params.slug);
+  const side = String(req.params.side || '').trim().toLowerCase();
+  if (!cohort) {
+    sendCohortNotFound(res);
+    return;
+  }
+
+  if (!['front', 'back'].includes(side)) {
+    res.status(400).json({ error: 'Template side must be front or back.' });
+    return;
+  }
+
+  const oldFilename = side === 'front' ? cohort.front_template_filename : cohort.back_template_filename;
+  const column = side === 'front' ? 'front_template_filename' : 'back_template_filename';
+  db.prepare(`
+    UPDATE cohorts
+    SET ${column} = NULL, updated_at = ?
+    WHERE id = ?
+  `).run(new Date().toISOString(), cohort.id);
+
+  if (oldFilename) {
+    removeFileIfExists(resolveInside(COHORT_TEMPLATES_DIR, oldFilename));
+  }
+
+  res.json({
+    cohort: serializeCohort(getCohortBySlug(cohort.slug)),
+    needsRegeneration: true,
+  });
 });
 
 app.get('/api/settings/accepting-response', (req, res) => {
@@ -2140,7 +2398,33 @@ app.get('/api/exports/dataset-backup.zip', (req, res) => {
     }
   });
 
+  if (manifest.templates?.front) {
+    const frontTemplatePath = resolveInside(COHORT_TEMPLATES_DIR, manifest.templates.front);
+    if (frontTemplatePath && fs.existsSync(frontTemplatePath)) {
+      archive.file(frontTemplatePath, { name: `templates/${path.basename(manifest.templates.front)}` });
+    }
+  }
+
+  if (manifest.templates?.back) {
+    const backTemplatePath = resolveInside(COHORT_TEMPLATES_DIR, manifest.templates.back);
+    if (backTemplatePath && fs.existsSync(backTemplatePath)) {
+      archive.file(backTemplatePath, { name: `templates/${path.basename(manifest.templates.back)}` });
+    }
+  }
+
   archive.finalize();
+});
+
+app.use((error, req, res, next) => {
+  if (error instanceof multer.MulterError) {
+    const message = error.code === 'LIMIT_FILE_SIZE'
+      ? 'Background image must be 20MB or smaller.'
+      : error.message;
+    res.status(400).json({ error: message });
+    return;
+  }
+
+  next(error);
 });
 
 app.listen(PORT, () => {
