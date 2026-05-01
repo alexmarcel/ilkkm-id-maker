@@ -9,7 +9,7 @@ Browser-based student ID card generator with a Node/SQLite backend for managing 
 
 - Public cohort home page lists available cohorts in a grid.
 - Global Match Card mini game with timer and ranking.
-- Admin-protected Add/Edit Cohort flow creates cohorts from Program + Sesi and updates the grid photo.
+- Admin-protected Add/Edit Cohort flow creates cohorts from Program + Sesi and updates the grid photo and card gradient color.
 - Each cohort has its own generator, grid preview, exports page, response setting, ZIP export, backup, restore, and regeneration tools.
 - Generate front/back student ID JPGs from `front.jpg` and `back.jpg`.
 - IC number lookup using format `######-##-####`.
@@ -79,11 +79,18 @@ DIPLOMA KEJURURAWATAN / SESI JANUARI 2026 - DISEMBER 2028
 
 Existing records are migrated into matching cohorts by Program/Sesi. The old `/grid` and `/exports` routes redirect to the default cohort routes.
 
-Use the pencil button on a cohort card to edit its Program, Sesi, or grid photo. When Program/Sesi changes, saved student rows are updated and existing card JPGs are regenerated so the back-card text stays consistent.
+Use the pencil button on a cohort card to edit its Program, Sesi, grid photo, or card gradient color. Cohort photos are compressed before upload. When Program/Sesi changes, saved student rows are updated, but existing card JPGs are not regenerated automatically. The edit modal shows an amber reminder to run `Regenerate Cards` from the cohort Exports page so back-card text stays consistent.
 
 ## Match Card Game
 
-The global Match Card game uses saved front/back card thumbnails from all cohorts. Players start from `/game`, match card pairs against a timer, then enter up to 8 characters for the global ranking table. Rankings are sorted by fastest time, then fewer moves.
+The global Match Card game uses saved front-card thumbnails from all cohorts. Players start from `/game`, match pairs against a timer, then enter a name up to 8 characters for the global ranking table. Rankings are sorted by fastest time, then fewer moves.
+
+Gameplay:
+
+- Up to 9 random students are selected per round.
+- Each selected student appears twice using the same front-card thumbnail.
+- Face-down cards show a circled question mark.
+- The header stays visible during play and the main button changes from `Start Game` to `Reset`.
 
 ## Exports
 
@@ -196,6 +203,7 @@ Persistent app data is mounted at `/data` inside the container.
 
 - `server.js` - Express server, SQLite schema, save/export/delete APIs.
 - `index.html` / `home.js` - Public cohort grid and Add Cohort entrypoint.
+- `game.html` / `game.js` - Global Match Card game and ranking UI.
 - `generator.html` / `app.js` - Cohort generator UI and canvas rendering.
 - `exports.html` / `exports.js` - Protected exports UI.
 - `grid.html` / `grid.js` - Cohort grid preview UI.
