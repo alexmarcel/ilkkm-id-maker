@@ -129,6 +129,7 @@ function renderRecords(records) {
     const actionCell = document.createElement('td');
     const frontButton = document.createElement('button');
     const backButton = document.createElement('button');
+    const photoButton = document.createElement('button');
     const regenerateButton = document.createElement('button');
     const deleteButton = document.createElement('button');
 
@@ -154,8 +155,17 @@ function renderRecords(records) {
     backButton.setAttribute('aria-label', `Preview back card for ${record.name}`);
     backButton.innerHTML = '<i data-lucide="file-output" aria-hidden="true"></i>';
 
+    photoButton.className = 'row-icon-button';
+    photoButton.type = 'button';
+    photoButton.dataset.action = 'download-photo';
+    photoButton.dataset.icNumber = record.icNumber;
+    photoButton.dataset.name = record.name;
+    photoButton.setAttribute('aria-label', `Download uploaded photo for ${record.name}`);
+    photoButton.innerHTML = '<i data-lucide="image-down" aria-hidden="true"></i>';
+
     regenerateButton.className = 'row-icon-button';
     regenerateButton.type = 'button';
+    regenerateButton.dataset.action = 'regenerate';
     regenerateButton.dataset.icNumber = record.icNumber;
     regenerateButton.dataset.name = record.name;
     regenerateButton.dataset.matrixNumber = record.matrixNumber;
@@ -167,7 +177,7 @@ function renderRecords(records) {
     deleteButton.dataset.icNumber = record.icNumber;
     deleteButton.dataset.name = record.name;
     deleteButton.innerHTML = '<i data-lucide="trash-2" aria-hidden="true"></i>';
-    actionCell.append(frontButton, backButton, regenerateButton, deleteButton);
+    actionCell.append(frontButton, backButton, photoButton, regenerateButton, deleteButton);
 
     row.append(numberCell, nameCell, matrixCell, icCell, actionCell);
     elements.recordsTableBody.append(row);
@@ -678,6 +688,15 @@ function openCardModal(button) {
   refreshIcons();
 }
 
+function downloadPhoto(button) {
+  const icNumber = button.dataset.icNumber;
+  if (!icNumber) {
+    return;
+  }
+
+  window.location.href = `/api/students/${encodeURIComponent(icNumber)}/photo?download=1`;
+}
+
 function closeCardModal() {
   elements.cardModal.hidden = true;
   elements.cardModalImage.removeAttribute('src');
@@ -729,6 +748,11 @@ elements.cancelDatasetAction.addEventListener('click', closeDatasetModal);
 elements.recordsTableBody.addEventListener('click', (event) => {
   const previewButton = event.target.closest('.row-icon-button');
   if (previewButton) {
+    if (previewButton.dataset.action === 'download-photo') {
+      downloadPhoto(previewButton);
+      return;
+    }
+
     if (!previewButton.dataset.side) {
       showRowRegenerateModal(previewButton);
       return;

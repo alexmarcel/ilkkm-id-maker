@@ -1779,6 +1779,11 @@ app.get('/api/students/:icNumber/photo', (req, res) => {
     return;
   }
 
+  if (String(req.query?.download || '').toLowerCase() === '1') {
+    res.download(photoPath, path.basename(student.photo_filename));
+    return;
+  }
+
   res.sendFile(photoPath);
 });
 
