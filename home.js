@@ -167,8 +167,8 @@ function renderCohorts(cohorts) {
     meta.textContent = `${cohort.recordCount || 0} saved record${Number(cohort.recordCount || 0) === 1 ? '' : 's'}`;
     status.className = cohort.acceptingResponse ? 'cohort-status closed' : 'cohort-status open';
     status.textContent = cohort.acceptingResponse ? 'Closed' : 'Open';
-    link.append(title, sesi, meta, status);
-    card.append(link, editLink);
+    link.append(title, sesi, meta);
+    card.append(link, status, editLink);
     elements.grid.append(card);
   });
 

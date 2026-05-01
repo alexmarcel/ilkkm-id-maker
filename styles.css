@@ -936,8 +936,9 @@ h1 {
 
 .cohort-card {
   position: relative;
-  display: grid;
-  grid-template-rows: auto auto 1fr auto;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
   gap: 10px;
   height: 100%;
   min-height: 220px;
@@ -1032,11 +1033,16 @@ h1 {
 }
 
 .cohort-status {
-  align-self: end;
-  justify-self: start;
+  position: absolute;
+  top: 14px;
+  left: 14px;
+  z-index: 2;
   border-radius: 999px;
   padding: 6px 10px;
+  font-size: 14px;
   font-weight: 700;
+  line-height: 1.35;
+  pointer-events: none;
 }
 
 .cohort-status.open {
