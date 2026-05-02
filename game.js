@@ -34,12 +34,56 @@ const state = {
   timerId: null,
   locked: false,
   isPlaying: false,
+  audioContext: null,
 };
 
 function refreshIcons() {
   if (window.lucide) {
     window.lucide.createIcons();
   }
+}
+
+function getAudioContext() {
+  if (!state.audioContext) {
+    const AudioContext = window.AudioContext || window.webkitAudioContext;
+    if (!AudioContext) {
+      return null;
+    }
+    state.audioContext = new AudioContext();
+  }
+
+  if (state.audioContext.state === 'suspended') {
+    state.audioContext.resume();
+  }
+
+  return state.audioContext;
+}
+
+function playMatchSound() {
+  const audioContext = getAudioContext();
+  if (!audioContext) {
+    return;
+  }
+
+  const now = audioContext.currentTime;
+  const notes = [523.25, 659.25, 783.99];
+
+  notes.forEach((frequency, index) => {
+    const oscillator = audioContext.createOscillator();
+    const gain = audioContext.createGain();
+    const start = now + index * 0.055;
+
+    oscillator.type = 'sine';
+    oscillator.frequency.setValueAtTime(frequency, start);
+    gain.gain.setValueAtTime(0.0001, start);
+    gain.gain.exponentialRampToValueAtTime(0.12, start + 0.012);
+    gain.gain.exponentialRampToValueAtTime(0.0001, start + 0.16);
+
+    oscillator.connect(gain);
+    gain.connect(audioContext.destination);
+    oscillator.start(start);
+    oscillator.stop(start + 0.18);
+  });
 }
 
 function formatTime(ms) {
@@ -281,6 +325,7 @@ function flipCard(button) {
   state.locked = true;
 
   if (isMatch) {
+    playMatchSound();
     first.classList.add('matched');
     second.classList.add('matched');
     state.flipped = [];

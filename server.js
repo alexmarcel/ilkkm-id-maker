@@ -19,8 +19,10 @@ const PHOTOS_DIR = process.env.PHOTOS_DIR || path.join(DATA_DIR, 'photos');
 const THUMBNAILS_DIR = process.env.THUMBNAILS_DIR || path.join(DATA_DIR, 'thumbnails');
 const COHORT_ICONS_DIR = process.env.COHORT_ICONS_DIR || path.join(DATA_DIR, 'cohort-icons');
 const COHORT_TEMPLATES_DIR = process.env.COHORT_TEMPLATES_DIR || path.join(DATA_DIR, 'cohort-templates');
+const APP_ASSETS_DIR = process.env.APP_ASSETS_DIR || path.join(DATA_DIR, 'app-assets');
 const DEFAULT_PROGRAM = 'DIPLOMA KEJURURAWATAN';
 const DEFAULT_SESI = 'SESI JANUARI 2026 - DISEMBER 2028';
+const DEFAULT_APP_NAME = 'ILKKM ID CARD';
 const EXPORTS_USERNAME = process.env.EXPORTS_USERNAME || 'admin';
 const EXPORTS_PASSWORD = process.env.EXPORTS_PASSWORD || 'ilkkm2026';
 const MAX_PHOTO_SIZE = 1024 * 1024;
@@ -101,6 +103,7 @@ fs.mkdirSync(PHOTOS_DIR, { recursive: true });
 fs.mkdirSync(THUMBNAILS_DIR, { recursive: true });
 fs.mkdirSync(COHORT_ICONS_DIR, { recursive: true });
 fs.mkdirSync(COHORT_TEMPLATES_DIR, { recursive: true });
+fs.mkdirSync(APP_ASSETS_DIR, { recursive: true });
 
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -130,6 +133,14 @@ const cohortTemplateUpload = multer({
   storage: multer.memoryStorage(),
   limits: {
     fileSize: 20 * 1024 * 1024,
+    files: 2,
+  },
+});
+
+const appSettingsUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: {
+    fileSize: 5 * 1024 * 1024,
     files: 2,
   },
 });
@@ -224,6 +235,32 @@ function setSetting(key, value) {
 
 function isResponseClosed() {
   return getSetting('accepting_response_closed', 'false') === 'true';
+}
+
+function getAppSettings() {
+  const iconUpdatedAt = getSetting('app_icon_updated_at', '');
+  const matchCardBackgroundUpdatedAt = getSetting('match_card_background_updated_at', '');
+  return {
+    appName: getSetting('app_name', DEFAULT_APP_NAME),
+    appIconUrl: iconUpdatedAt ? `/api/app/icon?v=${encodeURIComponent(iconUpdatedAt)}` : '/icon.jpg',
+    matchCardBackgroundUrl: matchCardBackgroundUpdatedAt
+      ? `/api/app/match-card-background?v=${encodeURIComponent(matchCardBackgroundUpdatedAt)}`
+      : '/match_game.jpg',
+    matchGameEnabled: getSetting('match_game_enabled', 'true') === 'true',
+  };
+}
+
+function normalizeAppName(value) {
+  const appName = String(value || '').trim();
+  if (!appName) {
+    throw new Error('App name is required.');
+  }
+
+  if (appName.length > 60) {
+    throw new Error('App name must be 60 characters or fewer.');
+  }
+
+  return appName;
 }
 
 function isCohortResponseClosed(cohort) {
@@ -422,6 +459,44 @@ async function saveCohortIcon(file, slug) {
 
   writeFileEnsured(path.join(COHORT_ICONS_DIR, filename), iconBuffer);
   return filename;
+}
+
+async function saveAppIcon(file) {
+  if (!file) {
+    return false;
+  }
+
+  if (!getPhotoExtension(file.mimetype)) {
+    throw new Error('App icon must be a JPG or PNG image.');
+  }
+
+  const iconBuffer = await sharp(file.buffer)
+    .resize(512, 512, { fit: 'cover', position: 'centre' })
+    .jpeg({ quality: 84, mozjpeg: true })
+    .toBuffer();
+
+  writeFileEnsured(path.join(APP_ASSETS_DIR, 'app-icon.jpg'), iconBuffer);
+  setSetting('app_icon_updated_at', new Date().toISOString());
+  return true;
+}
+
+async function saveMatchCardBackground(file) {
+  if (!file) {
+    return false;
+  }
+
+  if (!getPhotoExtension(file.mimetype)) {
+    throw new Error('Match card background must be a JPG or PNG image.');
+  }
+
+  const backgroundBuffer = await sharp(file.buffer)
+    .resize(1280, 720, { fit: 'cover', position: 'centre' })
+    .jpeg({ quality: 86, mozjpeg: true })
+    .toBuffer();
+
+  writeFileEnsured(path.join(APP_ASSETS_DIR, 'match-card-background.jpg'), backgroundBuffer);
+  setSetting('match_card_background_updated_at', new Date().toISOString());
+  return true;
 }
 
 async function saveCohortTemplate(file, slug, side) {
@@ -1279,6 +1354,9 @@ app.use(['/exports', '/exports.html', '/api/exports'], requireExportsPassword);
 app.use(/^\/cohorts\/[^/]+\/exports\/?$/, requireExportsPassword);
 app.use('/admin/cohorts/new', requireExportsPassword);
 app.use(/^\/admin\/cohorts\/[^/]+\/edit\/?$/, requireExportsPassword);
+app.use('/admin/app-settings', requireExportsPassword);
+app.use('/admin.html', requireExportsPassword);
+app.use('/api/admin/app-settings', requireExportsPassword);
 
 app.get('/cohorts/:slug', (req, res) => {
   const cohort = getCohortBySlug(req.params.slug);
@@ -1324,6 +1402,14 @@ app.get('/admin/cohorts/:slug/edit', (req, res) => {
   res.sendFile(path.join(ROOT_DIR, 'index.html'));
 });
 
+app.get('/admin/app-settings', (req, res) => {
+  res.sendFile(path.join(ROOT_DIR, 'admin.html'));
+});
+
+app.get('/admin.html', (req, res) => {
+  res.sendFile(path.join(ROOT_DIR, 'admin.html'));
+});
+
 app.get('/grid', (req, res) => {
   res.redirect(`/cohorts/${encodeURIComponent(getDefaultCohort().slug)}/grid`);
 });
@@ -1333,6 +1419,11 @@ app.get('/exports', (req, res) => {
 });
 
 app.get('/game', (req, res) => {
+  if (!getAppSettings().matchGameEnabled) {
+    res.status(404).send('Match game is disabled.');
+    return;
+  }
+
   res.sendFile(path.join(ROOT_DIR, 'game.html'));
 });
 
@@ -1340,6 +1431,45 @@ app.use(express.static(ROOT_DIR, {
   extensions: ['html'],
   index: 'index.html',
 }));
+
+app.get('/api/app-settings', (req, res) => {
+  res.json(getAppSettings());
+});
+
+app.get('/api/app/icon', (req, res) => {
+  const iconPath = path.join(APP_ASSETS_DIR, 'app-icon.jpg');
+  if (!fs.existsSync(iconPath)) {
+    res.sendFile(path.join(ROOT_DIR, 'icon.jpg'));
+    return;
+  }
+
+  res.sendFile(iconPath);
+});
+
+app.get('/api/app/match-card-background', (req, res) => {
+  const backgroundPath = path.join(APP_ASSETS_DIR, 'match-card-background.jpg');
+  if (!fs.existsSync(backgroundPath)) {
+    res.sendFile(path.join(ROOT_DIR, 'match_game.jpg'));
+    return;
+  }
+
+  res.sendFile(backgroundPath);
+});
+
+app.post('/api/admin/app-settings', appSettingsUpload.fields([
+  { name: 'icon', maxCount: 1 },
+  { name: 'matchCardBackground', maxCount: 1 },
+]), async (req, res) => {
+  try {
+    setSetting('app_name', normalizeAppName(req.body.appName));
+    setSetting('match_game_enabled', req.body.matchGameEnabled === 'true' ? 'true' : 'false');
+    await saveAppIcon(req.files?.icon?.[0]);
+    await saveMatchCardBackground(req.files?.matchCardBackground?.[0]);
+    res.json(getAppSettings());
+  } catch (error) {
+    res.status(400).json({ error: error.message || 'Could not save app settings.' });
+  }
+});
 
 app.get('/api/cohorts', (req, res) => {
   const cohorts = db.prepare(`
@@ -1417,6 +1547,15 @@ app.get('/api/cohorts/:slug/templates/:side', (req, res) => {
 
   res.setHeader('Cache-Control', 'public, max-age=86400');
   res.sendFile(templatePath);
+});
+
+app.use('/api/game', (req, res, next) => {
+  if (!getAppSettings().matchGameEnabled) {
+    res.status(404).json({ error: 'Match game is disabled.' });
+    return;
+  }
+
+  next();
 });
 
 app.get('/api/game/cards', (req, res) => {

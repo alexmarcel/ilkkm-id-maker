@@ -127,19 +127,52 @@ async function compressCohortIcon(file) {
 }
 
 function renderMessage(message) {
-  elements.grid.innerHTML = '';
   const empty = document.createElement('p');
   empty.className = 'grid-empty';
   empty.textContent = message;
   elements.grid.append(empty);
 }
 
+function createMatchGameCard() {
+  const settings = window.appSettings || {};
+  const card = document.createElement('div');
+  const link = document.createElement('a');
+  const footer = document.createElement('span');
+  const icon = document.createElement('span');
+  const copy = document.createElement('span');
+  const title = document.createElement('strong');
+  const action = document.createElement('span');
+
+  card.className = 'cohort-card-wrap match-game-card-wrap';
+  card.dataset.matchGameLink = '';
+  card.hidden = !settings.matchGameEnabled;
+  link.className = 'cohort-card match-game-card';
+  link.href = '/game';
+  link.style.setProperty('--match-card-background', `url("${settings.matchCardBackgroundUrl || '/match_game.jpg'}")`);
+  footer.className = 'match-game-card-footer';
+  icon.className = 'match-game-card-icon';
+  icon.innerHTML = '<i data-lucide="gamepad-2" aria-hidden="true"></i>';
+  copy.className = 'match-game-card-copy';
+  title.textContent = 'Memory Game';
+  action.className = 'match-game-card-action';
+  action.textContent = 'Play Now';
+  copy.append(title);
+  footer.append(icon, copy, action);
+  link.append(footer);
+  card.append(link);
+  return card;
+}
+
 function renderCohorts(cohorts) {
   currentCohorts = cohorts;
   elements.grid.innerHTML = '';
+  const fallbackIcon = window.appSettings?.appIconUrl || '/icon.jpg';
+  const gameCard = createMatchGameCard();
+  elements.grid.append(gameCard);
 
   if (cohorts.length === 0) {
     renderMessage('No cohorts yet.');
+    refreshIcons();
     return;
   }
 
@@ -155,7 +188,7 @@ function renderCohorts(cohorts) {
     card.className = 'cohort-card-wrap';
     link.className = 'cohort-card';
     link.href = `/cohorts/${encodeURIComponent(cohort.slug)}`;
-    link.style.setProperty('--cohort-card-image', `url("${cohort.iconUrl || '/icon.jpg'}")`);
+    link.style.setProperty('--cohort-card-image', `url("${cohort.iconUrl || fallbackIcon}")`);
     link.style.setProperty('--cohort-card-color', cohort.accentColor || '#0f8ea3');
     link.style.setProperty('--cohort-card-soft-color', `${cohort.accentColor || '#0f8ea3'}2e`);
     editLink.className = 'cohort-edit-button';
@@ -177,6 +210,7 @@ function renderCohorts(cohorts) {
 
 async function loadCohorts() {
   setStatus('Loading cohorts...');
+  elements.grid.innerHTML = '';
   renderMessage('Loading cohorts...');
 
   try {
@@ -189,6 +223,7 @@ async function loadCohorts() {
     renderCohorts(result.cohorts || []);
     setStatus(`${(result.cohorts || []).length} cohort${(result.cohorts || []).length === 1 ? '' : 's'} ready.`, 'ready');
   } catch (error) {
+    elements.grid.innerHTML = '';
     renderMessage('Could not load cohorts.');
     setStatus(error.message || 'Could not load cohorts.', 'error');
   }
@@ -382,5 +417,11 @@ loadCohorts().then(() => {
     } else {
       setStatus('Cohort not found.', 'error');
     }
+  }
+});
+
+window.addEventListener('app-settings:ready', () => {
+  if (currentCohorts.length) {
+    renderCohorts(currentCohorts);
   }
 });

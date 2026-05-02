@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>App Settings - ILKKM ID Card Maker</title>
+    <link rel="stylesheet" href="/styles.css">
+  </head>
+  <body>
+    <main class="app-shell">
+      <section class="exports-shell" aria-label="App settings">
+        <form class="control-panel admin-settings-panel" id="appSettingsForm">
+          <div class="heading">
+            <h5 class="eyebrow">
+              <img class="brand-icon" src="/icon.jpg" alt="" aria-hidden="true">
+              <span>APP SETTINGS</span>
+            </h5>
+            <a class="secondary-link inline-link" href="/">
+              <i data-lucide="arrow-left" aria-hidden="true"></i>
+              <span>BACK TO COHORTS</span>
+            </a>
+          </div>
+
+          <label class="field">
+            <span>App Name</span>
+            <input id="appNameInput" type="text" maxlength="60" required>
+          </label>
+
+          <div class="field upload-field">
+            <span>App Icon JPEG</span>
+            <label class="upload-button" for="appIconInput" tabindex="0">
+              <i data-lucide="image-up" aria-hidden="true"></i>
+              <span id="appIconButtonText">Replace App Icon</span>
+            </label>
+            <input id="appIconInput" type="file" accept="image/jpeg,image/png">
+            <div class="admin-icon-preview">
+              <img class="app-icon-image" id="appIconPreview" src="/icon.jpg" alt="">
+              <span>Used on the main page and save/loading spinner.</span>
+            </div>
+          </div>
+
+          <div class="field upload-field">
+            <span>Match Card Background JPEG</span>
+            <label class="upload-button" for="matchCardBackgroundInput" tabindex="0">
+              <i data-lucide="image-up" aria-hidden="true"></i>
+              <span id="matchCardBackgroundButtonText">Replace Background</span>
+            </label>
+            <input id="matchCardBackgroundInput" type="file" accept="image/jpeg,image/png">
+            <div class="admin-image-preview">
+              <img id="matchCardBackgroundPreview" src="/match_game.jpg" alt="">
+              <span>Used by the Memory Game card on the main page.</span>
+            </div>
+          </div>
+
+          <label class="settings-switch">
+            <span>
+              <strong>Match game</strong>
+              <small>Show the Memory Game button and allow the game page.</small>
+            </span>
+            <input id="matchGameEnabled" type="checkbox" role="switch">
+          </label>
+
+          <p class="save-status" id="appSettingsStatus" role="status">
+            <i data-lucide="info" aria-hidden="true"></i>
+            <span>Update the public app display settings.</span>
+          </p>
+
+          <button class="primary-action save-action" id="saveAppSettings" type="submit">
+            <i data-lucide="save" aria-hidden="true"></i>
+            <span>Save Settings</span>
+          </button>
+        </form>
+      </section>
+    </main>
+
+    <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
+    <script src="/app-settings.js"></script>
+    <script src="/admin.js"></script>
+  </body>
+</html>
