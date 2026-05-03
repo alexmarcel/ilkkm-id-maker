@@ -36,6 +36,14 @@
         
 
         <section class="game-play" id="gamePlay" hidden>
+          <div class="game-loading" id="gameLoading" hidden>
+            <div class="game-loading-header">
+              <span id="gameLoadingText">Loading cards... 0%</span>
+            </div>
+            <div class="game-loading-track" aria-hidden="true">
+              <span id="gameLoadingBar"></span>
+            </div>
+          </div>
           <div class="game-stats" aria-label="Game progress">
             <span id="gameTimer">00:00.0</span>
             <span id="gameMoves">0 moves</span>

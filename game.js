@@ -9,6 +9,9 @@ const elements = {
   gameStatus: document.querySelector('#gameStatus'),
   rankingBody: document.querySelector('#rankingBody'),
   gameBoard: document.querySelector('#gameBoard'),
+  loadingPanel: document.querySelector('#gameLoading'),
+  loadingText: document.querySelector('#gameLoadingText'),
+  loadingBar: document.querySelector('#gameLoadingBar'),
   timer: document.querySelector('#gameTimer'),
   moves: document.querySelector('#gameMoves'),
   matches: document.querySelector('#gameMatches'),
@@ -34,6 +37,8 @@ const state = {
   timerId: null,
   locked: false,
   isPlaying: false,
+  isLoading: false,
+  loadToken: 0,
   audioContext: null,
 };
 
@@ -99,6 +104,21 @@ function setStatus(message, type = '') {
   if (type) {
     elements.gameStatus.classList.add(type);
   }
+}
+
+function setLoadingProgress(loaded, total) {
+  const percent = total > 0 ? Math.round((loaded / total) * 100) : 100;
+  elements.loadingText.textContent = `Loading cards... ${percent}%`;
+  elements.loadingBar.style.width = `${percent}%`;
+}
+
+function showLoadingPanel() {
+  elements.loadingPanel.hidden = false;
+  setLoadingProgress(0, 1);
+}
+
+function hideLoadingPanel() {
+  elements.loadingPanel.hidden = true;
 }
 
 function setScoreStatus(message, type = '') {
@@ -230,7 +250,6 @@ function createCard(card) {
   front.className = 'match-card-face match-card-frontface';
   front.src = card.imageUrl;
   front.alt = card.alt;
-  front.loading = 'lazy';
   back.append(label);
   inner.append(back, front);
   button.append(inner);
@@ -245,15 +264,62 @@ function renderBoard() {
   });
 }
 
-function resetGameState() {
+function prepareGameState() {
   state.cards = buildDeck();
   state.flipped = [];
   state.matchedPairs = 0;
   state.moves = 0;
   state.elapsedMs = 0;
-  state.locked = false;
+  state.locked = true;
   updateStats();
+  elements.gameBoard.innerHTML = '';
+}
+
+function beginLoadedGame() {
   renderBoard();
+  state.locked = false;
+  state.isLoading = false;
+  hideLoadingPanel();
+  startTimer();
+}
+
+function preloadImage(url) {
+  return new Promise((resolve) => {
+    const image = new Image();
+    image.onload = () => resolve({ ok: true, url });
+    image.onerror = () => resolve({ ok: false, url });
+    image.src = url;
+  });
+}
+
+async function preloadDeckImages(loadToken) {
+  const imageUrls = [...new Set(state.cards.map((card) => card.imageUrl).filter(Boolean))];
+  let loaded = 0;
+  let failed = 0;
+
+  setLoadingProgress(0, imageUrls.length);
+
+  if (!imageUrls.length) {
+    return { failed: 0, stale: state.loadToken !== loadToken };
+  }
+
+  await Promise.all(imageUrls.map(async (url) => {
+    const result = await preloadImage(url);
+    if (state.loadToken !== loadToken) {
+      return;
+    }
+
+    loaded += 1;
+    if (!result.ok) {
+      failed += 1;
+    }
+    setLoadingProgress(loaded, imageUrls.length);
+  }));
+
+  return {
+    failed,
+    stale: state.loadToken !== loadToken,
+  };
 }
 
 function setStartButtonMode(isPlaying) {
@@ -267,17 +333,30 @@ function setStartButtonMode(isPlaying) {
   refreshIcons();
 }
 
-function startGame() {
+async function startGame() {
   if (state.records.length < 2) {
     return;
   }
+  const loadToken = state.loadToken + 1;
+  state.loadToken = loadToken;
+  state.isLoading = true;
   state.isPlaying = true;
+  window.clearInterval(state.timerId);
+  state.timerId = null;
   elements.gameMain.hidden = true;
   elements.gamePlay.hidden = false;
   setStartButtonMode(true);
-  resetGameState();
-  startTimer();
-  setStatus('Game started.', 'ready');
+  showLoadingPanel();
+  prepareGameState();
+  setStatus('Loading selected cards...', 'ready');
+
+  const result = await preloadDeckImages(loadToken);
+  if (result.stale) {
+    return;
+  }
+
+  beginLoadedGame();
+  setStatus(result.failed > 0 ? 'Some cards could not preload.' : 'Game started.', result.failed > 0 ? 'error' : 'ready');
 }
 
 function finishGame() {
@@ -292,11 +371,15 @@ function finishGame() {
 }
 
 function returnToMain() {
+  state.loadToken += 1;
   window.clearInterval(state.timerId);
   state.timerId = null;
   state.locked = false;
   state.flipped = [];
   state.isPlaying = false;
+  state.isLoading = false;
+  hideLoadingPanel();
+  elements.gameBoard.innerHTML = '';
   elements.scoreModal.hidden = true;
   elements.gamePlay.hidden = true;
   elements.gameMain.hidden = false;
@@ -415,8 +498,7 @@ async function init() {
 
 elements.startGame.addEventListener('click', () => {
   if (state.isPlaying) {
-    resetGameState();
-    startTimer();
+    startGame();
     return;
   }
   startGame();
