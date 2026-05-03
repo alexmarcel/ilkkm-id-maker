@@ -1062,7 +1062,7 @@ h1 {
   min-height: 0;
   background:
     linear-gradient(180deg, rgba(8, 21, 31, 0), rgba(8, 21, 31, 0.08)),
-    var(--cohort-card-image) center center / 100% auto no-repeat;
+    var(--cohort-card-image) center calc(50% + 20px) / 100% auto no-repeat;
 }
 
 .cohort-card-footer {
