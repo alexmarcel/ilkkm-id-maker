@@ -180,6 +180,7 @@ function renderCohorts(cohorts) {
     const card = document.createElement('div');
     const link = document.createElement('a');
     const editLink = document.createElement('a');
+    const media = document.createElement('span');
     const footer = document.createElement('span');
     const copy = document.createElement('span');
     const title = document.createElement('strong');
@@ -190,9 +191,10 @@ function renderCohorts(cohorts) {
     card.className = 'cohort-card-wrap';
     link.className = 'cohort-card';
     link.href = `/cohorts/${encodeURIComponent(cohort.slug)}`;
-    link.style.setProperty('--cohort-card-image', `url("${cohort.iconUrl || fallbackIcon}")`);
     link.style.setProperty('--cohort-card-color', cohort.accentColor || '#0f8ea3');
     link.style.setProperty('--cohort-card-soft-color', `${cohort.accentColor || '#0f8ea3'}2e`);
+    media.className = 'cohort-card-media';
+    media.style.setProperty('--cohort-card-image', `url("${cohort.iconUrl || fallbackIcon}")`);
     footer.className = 'cohort-card-footer';
     copy.className = 'cohort-card-copy';
     editLink.className = 'cohort-edit-button';
@@ -207,7 +209,7 @@ function renderCohorts(cohorts) {
     status.textContent = cohort.acceptingResponse ? 'Closed' : 'Open';
     copy.append(title, sesi, meta);
     footer.append(copy);
-    link.append(footer);
+    link.append(media, footer);
     card.append(link, status, editLink);
     elements.grid.append(card);
   });

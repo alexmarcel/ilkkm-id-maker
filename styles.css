@@ -998,10 +998,8 @@ h1 {
 
 .cohort-card {
   position: relative;
-  display: flex;
-  flex-direction: column;
-  justify-content: flex-end;
-  gap: 10px;
+  display: grid;
+  grid-template-rows: minmax(0, 1fr) auto;
   height: 100%;
   min-height: 220px;
   overflow: hidden;
@@ -1010,10 +1008,7 @@ h1 {
   padding: 0;
   color: var(--text);
   text-decoration: none;
-  background:
-    linear-gradient(180deg, rgba(8, 21, 31, 0), rgba(8, 21, 31, 0.08)),
-    var(--cohort-card-image) center top / 100% auto no-repeat,
-    color-mix(in srgb, var(--cohort-card-color, #0f8ea3) 14%, white);
+  background: color-mix(in srgb, var(--cohort-card-color, #0f8ea3) 14%, white);
   box-shadow: 0 12px 32px rgba(20, 45, 57, 0.12);
   transition: transform 160ms ease, box-shadow 160ms ease, border-color 160ms ease;
 }
@@ -1058,6 +1053,16 @@ h1 {
   border-color: #fff;
   box-shadow: 0 18px 42px rgba(20, 45, 57, 0.16);
   transform: translateY(-2px);
+}
+
+.cohort-card-media {
+  position: relative;
+  z-index: 1;
+  display: block;
+  min-height: 0;
+  background:
+    linear-gradient(180deg, rgba(8, 21, 31, 0), rgba(8, 21, 31, 0.08)),
+    var(--cohort-card-image) center center / 100% auto no-repeat;
 }
 
 .cohort-card-footer {
