@@ -180,6 +180,8 @@ function renderCohorts(cohorts) {
     const card = document.createElement('div');
     const link = document.createElement('a');
     const editLink = document.createElement('a');
+    const footer = document.createElement('span');
+    const copy = document.createElement('span');
     const title = document.createElement('strong');
     const sesi = document.createElement('span');
     const meta = document.createElement('span');
@@ -191,6 +193,8 @@ function renderCohorts(cohorts) {
     link.style.setProperty('--cohort-card-image', `url("${cohort.iconUrl || fallbackIcon}")`);
     link.style.setProperty('--cohort-card-color', cohort.accentColor || '#0f8ea3');
     link.style.setProperty('--cohort-card-soft-color', `${cohort.accentColor || '#0f8ea3'}2e`);
+    footer.className = 'cohort-card-footer';
+    copy.className = 'cohort-card-copy';
     editLink.className = 'cohort-edit-button';
     editLink.href = `/admin/cohorts/${encodeURIComponent(cohort.slug)}/edit`;
     editLink.setAttribute('aria-label', `Edit cohort ${cohort.program}`);
@@ -198,9 +202,12 @@ function renderCohorts(cohorts) {
     title.textContent = cohort.program;
     sesi.textContent = cohort.sesi;
     meta.textContent = `${cohort.recordCount || 0} saved record${Number(cohort.recordCount || 0) === 1 ? '' : 's'}`;
+    meta.className = 'cohort-card-meta';
     status.className = cohort.acceptingResponse ? 'cohort-status closed' : 'cohort-status open';
     status.textContent = cohort.acceptingResponse ? 'Closed' : 'Open';
-    link.append(title, sesi, meta);
+    copy.append(title, sesi, meta);
+    footer.append(copy);
+    link.append(footer);
     card.append(link, status, editLink);
     elements.grid.append(card);
   });

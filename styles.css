@@ -929,17 +929,27 @@ h1 {
 }
 
 .cohort-page-header {
+  position: relative;
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 16px;
+  overflow: hidden;
   margin-bottom: 14px;
   border: 1px solid var(--line);
   border-radius: 14px;
-  padding: 18px;
+  padding: 28px 18px 18px;
   background: var(--panel);
   box-shadow: var(--shadow);
   backdrop-filter: blur(18px);
+}
+
+.cohort-page-header::before {
+  content: "";
+  position: absolute;
+  inset: 0 0 auto;
+  height: 10px;
+  background: var(--gradient);
 }
 
 .add-cohort-button {
@@ -995,43 +1005,25 @@ h1 {
   height: 100%;
   min-height: 220px;
   overflow: hidden;
-  border: 1px solid var(--line);
+  border: 2px solid #fff;
   border-radius: 10px;
-  padding: 22px 18px 18px;
+  padding: 0;
   color: var(--text);
   text-decoration: none;
   background:
-    linear-gradient(135deg, var(--cohort-card-soft-color, rgba(15, 142, 163, 0.18)), rgba(255, 255, 255, 0.9) 58%),
-    rgba(255, 255, 255, 0.82);
-  background:
-    linear-gradient(135deg, color-mix(in srgb, var(--cohort-card-color, #0f8ea3) 18%, white), rgba(255, 255, 255, 0.9) 58%),
-    rgba(255, 255, 255, 0.82);
+    linear-gradient(180deg, rgba(8, 21, 31, 0), rgba(8, 21, 31, 0.08)),
+    var(--cohort-card-image) center top / 100% auto no-repeat,
+    color-mix(in srgb, var(--cohort-card-color, #0f8ea3) 14%, white);
   box-shadow: 0 12px 32px rgba(20, 45, 57, 0.12);
   transition: transform 160ms ease, box-shadow 160ms ease, border-color 160ms ease;
 }
 
 .cohort-card::before {
-  content: "";
-  position: absolute;
-  inset: 0;
-  z-index: 0;
-  background-image: var(--cohort-card-image);
-  background-position: center;
-  background-size: cover;
-  opacity: 0.18;
-  pointer-events: none;
+  content: none;
 }
 
 .cohort-card::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-  z-index: 0;
-  background:
-    linear-gradient(135deg, color-mix(in srgb, var(--cohort-card-color, #0f8ea3) 36%, transparent), transparent 48%),
-    linear-gradient(315deg, color-mix(in srgb, var(--cohort-card-color, #0f8ea3) 18%, transparent), transparent 50%);
-  opacity: 0.8;
-  pointer-events: none;
+  content: none;
 }
 
 .cohort-edit-button {
@@ -1063,25 +1055,56 @@ h1 {
 }
 
 .cohort-card:hover {
-  border-color: color-mix(in srgb, var(--cohort-card-color, #0f8ea3) 44%, white);
+  border-color: #fff;
   box-shadow: 0 18px 42px rgba(20, 45, 57, 0.16);
   transform: translateY(-2px);
+}
+
+.cohort-card-footer {
+  position: relative;
+  z-index: 1;
+  display: block;
+  width: 100%;
+  border-top: 2px solid #fff;
+  padding: 11px 12px;
+  background: rgba(255, 255, 255, 0.94);
+  box-shadow: 0 -14px 34px rgba(8, 21, 31, 0.12);
+}
+
+.cohort-card-copy {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
 }
 
 .cohort-card strong {
   position: relative;
   z-index: 1;
   color: #123b67;
-  font-size: 20px;
+  font-size: 15px;
   line-height: 1.2;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .cohort-card span {
   position: relative;
   z-index: 1;
   color: var(--muted);
-  font-size: 14px;
-  line-height: 1.35;
+  font-size: 12px;
+  line-height: 1.25;
+}
+
+.cohort-card-copy > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cohort-card-meta {
+  color: #36515d !important;
+  font-weight: 700;
 }
 
 .match-game-card {
