@@ -1113,6 +1113,8 @@ h1 {
 }
 
 .match-game-card {
+  display: flex;
+  flex-direction: column;
   justify-content: flex-end;
   padding: 0;
   min-height: 220px;
@@ -1145,9 +1147,9 @@ h1 {
 .match-game-card-footer {
   position: relative;
   z-index: 1;
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
+  display: flex;
   align-items: center;
+  justify-content: space-between;
   gap: 10px;
   width: 100%;
   border-top: 2px solid #fff;
@@ -1172,6 +1174,7 @@ h1 {
   display: grid;
   gap: 2px;
   min-width: 0;
+  flex: 1 1 auto;
 }
 
 .match-game-card-copy strong,
