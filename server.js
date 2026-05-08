@@ -1350,6 +1350,72 @@ function formatGameScore(row, index = 0) {
   };
 }
 
+function streamCardsZip(req, res) {
+  const cohort = getCohortFromRequest(req);
+  if (!cohort) {
+    sendCohortNotFound(res);
+    return;
+  }
+
+  const students = getStudentsByCohort(cohort);
+
+  if (students.length === 0) {
+    res.status(404).json({
+      error: 'No matching records found.',
+      program: cohort.program,
+      sesi: cohort.sesi,
+      cohortSlug: cohort.slug,
+    });
+    return;
+  }
+
+  const cohortSlug = cohort.slug;
+  const cohortExportDir = path.join(EXPORTS_DIR, cohortSlug);
+  let skippedFiles = 0;
+  const entries = [];
+
+  students.forEach((student) => {
+    const icSlug = stripIcHyphens(student.ic_number);
+    [
+      { filename: student.front_filename, fallback: `${icSlug}_front.jpg` },
+      { filename: student.back_filename, fallback: `${icSlug}_back.jpg` },
+    ].forEach((file) => {
+      const filePath = resolveInside(cohortExportDir, file.filename || file.fallback);
+      if (!filePath || !fs.existsSync(filePath)) {
+        skippedFiles += 1;
+        return;
+      }
+
+      entries.push({
+        filePath,
+        zipPath: `${icSlug}/${path.basename(file.filename || file.fallback)}`,
+      });
+    });
+  });
+
+  res.setHeader('Content-Type', 'application/zip');
+  res.setHeader('Content-Disposition', `attachment; filename="${cohortSlug}_cards.zip"`);
+  res.setHeader('X-Skipped-Files', String(skippedFiles));
+  res.setHeader('X-Record-Count', String(students.length));
+
+  const archive = archiver('zip', { zlib: { level: 9 } });
+  archive.on('error', (error) => {
+    if (!res.headersSent) {
+      res.status(500).json({ error: 'Could not create export ZIP.' });
+    } else {
+      res.destroy(error);
+    }
+  });
+
+  archive.pipe(res);
+  entries.forEach((entry) => {
+    archive.file(entry.filePath, { name: entry.zipPath });
+  });
+  archive.finalize();
+}
+
+app.get('/api/exports/cards.zip', streamCardsZip);
+
 app.use(['/exports', '/exports.html', '/api/exports'], requireExportsPassword);
 app.use(/^\/cohorts\/[^/]+\/exports\/?$/, requireExportsPassword);
 app.use('/admin/cohorts/new', requireExportsPassword);
@@ -2414,70 +2480,6 @@ app.post('/api/students', upload.fields([
   } catch (error) {
     res.status(500).json({ error: error.message || 'Could not save student.' });
   }
-});
-
-app.get('/api/exports/cards.zip', (req, res) => {
-  const cohort = getCohortFromRequest(req);
-  if (!cohort) {
-    sendCohortNotFound(res);
-    return;
-  }
-
-  const students = getStudentsByCohort(cohort);
-
-  if (students.length === 0) {
-    res.status(404).json({
-      error: 'No matching records found.',
-      program: cohort.program,
-      sesi: cohort.sesi,
-      cohortSlug: cohort.slug,
-    });
-    return;
-  }
-
-  const cohortSlug = cohort.slug;
-  const cohortExportDir = path.join(EXPORTS_DIR, cohortSlug);
-  let skippedFiles = 0;
-  const entries = [];
-
-  students.forEach((student) => {
-    const icSlug = stripIcHyphens(student.ic_number);
-    [
-      { filename: student.front_filename, fallback: `${icSlug}_front.jpg` },
-      { filename: student.back_filename, fallback: `${icSlug}_back.jpg` },
-    ].forEach((file) => {
-      const filePath = resolveInside(cohortExportDir, file.filename || file.fallback);
-      if (!filePath || !fs.existsSync(filePath)) {
-        skippedFiles += 1;
-        return;
-      }
-
-      entries.push({
-        filePath,
-        zipPath: `${icSlug}/${path.basename(file.filename || file.fallback)}`,
-      });
-    });
-  });
-
-  res.setHeader('Content-Type', 'application/zip');
-  res.setHeader('Content-Disposition', `attachment; filename="${cohortSlug}_cards.zip"`);
-  res.setHeader('X-Skipped-Files', String(skippedFiles));
-  res.setHeader('X-Record-Count', String(students.length));
-
-  const archive = archiver('zip', { zlib: { level: 9 } });
-  archive.on('error', (error) => {
-    if (!res.headersSent) {
-      res.status(500).json({ error: 'Could not create export ZIP.' });
-    } else {
-      res.destroy(error);
-    }
-  });
-
-  archive.pipe(res);
-  entries.forEach((entry) => {
-    archive.file(entry.filePath, { name: entry.zipPath });
-  });
-  archive.finalize();
 });
 
 app.get('/api/exports/dataset-backup.zip', (req, res) => {
