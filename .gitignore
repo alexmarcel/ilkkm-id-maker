@@ -1,6 +1,41 @@
-node_modules/
-.data/
-data/
+# Dependencies
+/node_modules/
+
+# Persistent and legacy runtime data
+/.data/
+/data/
+/ilkkm_backup/
+/ilkkm_files/
+
+# Local environment configuration
+/.env
+/.env.*
+!/.env.example
+
+# Logs and local server output
+*.log
 npm-debug.log*
-/ilkkm_backup
-/ilkkm_files
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+/.server.*
+
+# Temporary backup, restore, and integration artifacts
+/.mega-*
+/.full-*
+/.delete-*
+*.tmp
+*.temp
+
+# Test coverage
+/coverage/
+/.nyc_output/
+
+# Editors and operating systems
+/.idea/
+/.vscode/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+Desktop.ini

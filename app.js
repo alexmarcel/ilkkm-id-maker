@@ -76,6 +76,19 @@ const LAYOUT = {
     },
   },
 };
+const STAFF_LAYOUT = {
+  front: {
+    staffNumber: { x: 1530, y: 105, maxWidth: 360, fontSize: 92, minFontSize: 48 },
+    photo: { x: 653, y: 1020, width: 661, height: 904 },
+    name: { x: 984, centerY: 2180, maxWidth: 1520, fontSize: 116, minFontSize: 58, lineHeight: 128, maxLines: 2, color: '#fff' },
+    ic: { x: 984, y: 2660, maxWidth: 1320, fontSize: 94, minFontSize: 48, color: '#000' },
+    jobTitle: { x: 984, centerY: 2890, maxWidth: 1520, fontSize: 94, minFontSize: 46, lineHeight: 108, maxLines: 2, color: '#000' },
+  },
+  back: {
+    supervisorName: { x: 984, centerY: 2700, maxWidth: 1600, fontSize: 82, minFontSize: 42, lineHeight: 94, maxLines: 2 },
+    supervisorTitle: { x: 984, y: 2900, maxWidth: 1500, fontSize: 78, minFontSize: 40 },
+  },
+};
 
 const state = {
   templates: {
@@ -106,6 +119,14 @@ const elements = {
   photoStatus: document.querySelector('#photoStatus'),
   nameInput: document.querySelector('#nameInput'),
   matrixInput: document.querySelector('#matrixInput'),
+  jobTitleInput: document.querySelector('#jobTitleInput'),
+  staffNumberInput: document.querySelector('#staffNumberInput'),
+  matrixField: document.querySelector('#matrixField'),
+  jobTitleField: document.querySelector('#jobTitleField'),
+  staffNumberField: document.querySelector('#staffNumberField'),
+  programField: document.querySelector('#programField'),
+  sesiField: document.querySelector('#sesiField'),
+  recordDetailHeader: document.querySelector('#recordDetailHeader'),
   icInput: document.querySelector('#icInput'),
   programInput: document.querySelector('#programInput'),
   sesiInput: document.querySelector('#sesiInput'),
@@ -243,6 +264,8 @@ function getFormData() {
   return {
     name: elements.nameInput.value.trim().toUpperCase(),
     matrix: elements.matrixInput.value.trim().toUpperCase(),
+    jobTitle: elements.jobTitleInput.value.trim().toUpperCase(),
+    staffNumber: elements.staffNumberInput.value.trim().toUpperCase(),
     ic: elements.icInput.value.trim().toUpperCase(),
     program: (elements.programInput?.value || state.cohort?.program || '').trim().toUpperCase(),
     sesi: (elements.sesiInput?.value || state.cohort?.sesi || '').trim().toUpperCase(),
@@ -259,12 +282,13 @@ function isValidMatrix(value) {
 
 function isReady() {
   const data = getFormData();
+  const detailsValid = state.cohort?.type === 'staff' ? Boolean(data.jobTitle) : isValidMatrix(data.matrix);
   return Boolean(
     !state.acceptingResponse
     && state.fontReady
     && state.uploadedPhoto
     && data.name
-    && isValidMatrix(data.matrix)
+    && detailsValid
     && isValidIc(data.ic)
   );
 }
@@ -279,6 +303,8 @@ function updateFieldAvailability() {
     elements.photoInput.disabled = true;
     elements.nameInput.disabled = true;
     elements.matrixInput.disabled = true;
+    elements.jobTitleInput.disabled = true;
+    elements.staffNumberInput.disabled = true;
     elements.uploadButton.classList.add('disabled');
     elements.uploadButton.setAttribute('aria-disabled', 'true');
     elements.uploadButton.tabIndex = -1;
@@ -291,6 +317,8 @@ function updateFieldAvailability() {
   elements.photoInput.disabled = !enabled;
   elements.nameInput.disabled = !enabled;
   elements.matrixInput.disabled = !enabled;
+  elements.jobTitleInput.disabled = !enabled;
+  elements.staffNumberInput.disabled = !enabled;
   elements.uploadButton.classList.toggle('disabled', !enabled);
   elements.uploadButton.setAttribute('aria-disabled', String(!enabled));
   elements.uploadButton.tabIndex = enabled ? 0 : -1;
@@ -306,6 +334,8 @@ function clearStudentFields() {
   elements.photoInput.value = '';
   elements.nameInput.value = '';
   elements.matrixInput.value = '';
+  elements.jobTitleInput.value = '';
+  elements.staffNumberInput.value = '';
   elements.photoButtonText.textContent = 'Upload Photo';
   setPhotoStatus('');
   markDirty();
@@ -334,7 +364,7 @@ function updateStatus() {
     elements.icInput.setCustomValidity('');
   }
 
-  if (data.matrix && !isValidMatrix(data.matrix)) {
+  if (state.cohort?.type !== 'staff' && data.matrix && !isValidMatrix(data.matrix)) {
     elements.matrixInput.setCustomValidity('Use matrix format ABCD 1/1111(11)-1111.');
   } else {
     elements.matrixInput.setCustomValidity('');
@@ -528,6 +558,7 @@ function wrapIntoTwoLines(context, text, maxWidth, fontSize, minFontSize) {
 function drawCenteredSingleLine(context, text, config) {
   const size = fitSingleLine(context, text, config.maxWidth, config.fontSize, config.minFontSize);
   prepareText(context, size);
+  context.fillStyle = config.color || '#000';
   context.textAlign = 'center';
   context.fillText(text, config.x, config.y);
 }
@@ -547,6 +578,7 @@ function drawCenteredWrappedName(context, text, config) {
     : config.centerY - lineHeight / 2;
 
   prepareText(context, wrapped.size);
+  context.fillStyle = config.color || '#000';
   context.textAlign = 'center';
 
   wrapped.lines.forEach((line, index) => {
@@ -586,6 +618,8 @@ function drawCroppedImage(context, image, box) {
 
 function drawFrontScene(context) {
   const data = getFormData();
+  const isStaff = state.cohort?.type === 'staff';
+  const layout = isStaff ? STAFF_LAYOUT : LAYOUT;
 
   context.clearRect(0, 0, TEMPLATE_WIDTH, TEMPLATE_HEIGHT);
   setHighQualitySmoothing(context);
@@ -595,26 +629,37 @@ function drawFrontScene(context) {
   }
 
   if (state.uploadedPhoto) {
-    drawCroppedImage(context, state.uploadedPhoto, LAYOUT.front.photo);
+    drawCroppedImage(context, state.uploadedPhoto, layout.front.photo);
   }
 
   if (data.name) {
-    drawCenteredWrappedName(context, data.name, LAYOUT.front.name);
+    drawCenteredWrappedName(context, data.name, layout.front.name);
   }
 
-  if (data.matrix) {
-    drawCenteredSingleLine(context, data.matrix, LAYOUT.front.matrix);
+  if (isStaff) {
+    if (data.staffNumber) drawCenteredSingleLine(context, `No. ${data.staffNumber}`, layout.front.staffNumber);
+    if (data.ic) drawCenteredSingleLine(context, data.ic, layout.front.ic);
+    if (data.jobTitle) drawCenteredWrappedName(context, data.jobTitle, layout.front.jobTitle);
+  } else if (data.matrix) {
+    drawCenteredSingleLine(context, data.matrix, layout.front.matrix);
   }
 }
 
 function drawBackScene(context) {
   const data = getFormData();
+  const isStaff = state.cohort?.type === 'staff';
 
   context.clearRect(0, 0, TEMPLATE_WIDTH, TEMPLATE_HEIGHT);
   setHighQualitySmoothing(context);
 
   if (state.templates.back) {
     context.drawImage(state.templates.back, 0, 0, TEMPLATE_WIDTH, TEMPLATE_HEIGHT);
+  }
+
+  if (isStaff) {
+    drawCenteredWrappedName(context, state.cohort.supervisorName, STAFF_LAYOUT.back.supervisorName);
+    drawCenteredSingleLine(context, state.cohort.supervisorTitle, STAFF_LAYOUT.back.supervisorTitle);
+    return;
   }
 
   if (data.name) {
@@ -751,7 +796,7 @@ function getCohortQuery() {
 
 function getTemplateUrl(side) {
   const customUrl = side === 'front' ? state.cohort?.frontTemplateUrl : state.cohort?.backTemplateUrl;
-  return customUrl || `/${side}.jpg`;
+  return customUrl || (state.cohort?.type === 'staff' ? `/assets/staff-${side}.jpg` : `/${side}.jpg`);
 }
 
 async function loadCohort() {
@@ -773,6 +818,15 @@ async function loadCohort() {
   elements.gridPreviewLink.href = `/cohorts/${encodeURIComponent(result.slug)}/grid`;
   elements.exportsLink.href = `/cohorts/${encodeURIComponent(result.slug)}/exports`;
   state.acceptingResponse = Boolean(result.acceptingResponse);
+  const isStaff = result.type === 'staff';
+  elements.matrixField.hidden = isStaff;
+  elements.jobTitleField.hidden = !isStaff;
+  elements.staffNumberField.hidden = !isStaff;
+  elements.programField.hidden = isStaff;
+  elements.sesiField.hidden = isStaff;
+  elements.matrixInput.required = !isStaff;
+  elements.jobTitleInput.required = isStaff;
+  elements.recordDetailHeader.textContent = isStaff ? 'Staff Number / Job Title' : 'Matrix Number';
 }
 
 function renderRecordsMessage(message) {
@@ -803,7 +857,9 @@ function renderCohortRecords(records) {
 
     numberCell.textContent = record.number;
     nameCell.textContent = record.name;
-    matrixCell.textContent = record.matrixNumber;
+    matrixCell.textContent = state.cohort?.type === 'staff'
+      ? [record.staffNumber, record.jobTitle].filter(Boolean).join(' — ')
+      : record.matrixNumber;
     check.className = 'record-check';
     check.innerHTML = '<i data-lucide="check" aria-hidden="true"></i>';
     checkCell.append(check);
@@ -968,6 +1024,8 @@ async function lookupStudentByIc() {
     const student = result;
     elements.nameInput.value = student.name || '';
     elements.matrixInput.value = student.matrixNumber || '';
+    elements.jobTitleInput.value = student.jobTitle || '';
+    elements.staffNumberInput.value = student.staffNumber || '';
     state.uploadedPhoto = null;
     state.uploadedPhotoFile = null;
     elements.photoInput.value = '';
@@ -1009,6 +1067,8 @@ function scheduleStudentLookup() {
     elements.photoInput.value = '';
     elements.nameInput.value = '';
     elements.matrixInput.value = '';
+    elements.jobTitleInput.value = '';
+    elements.staffNumberInput.value = '';
     elements.photoButtonText.textContent = 'Upload Photo';
     setPhotoStatus('');
     setSaveStatus('Enter a valid IC number to check saved data.');
@@ -1050,6 +1110,8 @@ async function saveStudent() {
     payload.set('icNumber', data.ic);
     payload.set('name', data.name);
     payload.set('matrixNumber', data.matrix);
+    payload.set('jobTitle', data.jobTitle);
+    payload.set('staffNumber', data.staffNumber);
     payload.set('program', data.program);
     payload.set('sesi', data.sesi);
     payload.set('cohortSlug', state.cohort.slug);
@@ -1141,6 +1203,8 @@ elements.uploadButton.addEventListener('keydown', (event) => {
   }
 });
 elements.nameInput.addEventListener('input', scheduleRender);
+elements.jobTitleInput.addEventListener('input', scheduleRender);
+elements.staffNumberInput.addEventListener('input', scheduleRender);
 elements.matrixInput.addEventListener('input', (event) => {
   formatMatrixInput(event);
   scheduleRender();

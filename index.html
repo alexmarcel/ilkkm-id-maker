@@ -37,6 +37,13 @@
           </div>
           <div class="dataset-summary">
             <label class="field">
+              <span>Type</span>
+              <select id="newCohortType" required>
+                <option value="student">Students</option>
+                <option value="staff">Staff</option>
+              </select>
+            </label>
+            <label class="field">
               <span>Program</span>
               <input id="newCohortProgram" type="text" required>
             </label>
@@ -44,6 +51,16 @@
               <span>Sesi</span>
               <input id="newCohortSesi" type="text" required>
             </label>
+            <div id="staffSupervisorFields" hidden>
+              <label class="field">
+                <span>Supervisor Name</span>
+                <input id="newCohortSupervisorName" type="text">
+              </label>
+              <label class="field">
+                <span>Supervisor Title</span>
+                <input id="newCohortSupervisorTitle" type="text">
+              </label>
+            </div>
             <div class="field upload-field">
               <span>Photo</span>
               <label class="upload-button" for="newCohortIcon" tabindex="0">
@@ -64,6 +81,33 @@
               <i data-lucide="info" aria-hidden="true"></i>
               <span>Use the exports/admin login when prompted.</span>
             </p>
+            <section class="cohort-danger-zone" id="cohortDangerZone" hidden aria-labelledby="cohortDangerTitle">
+              <div class="cohort-danger-heading">
+                <div>
+                  <span class="cohort-danger-label">DANGER ZONE</span>
+                  <h3 id="cohortDangerTitle">Delete this cohort</h3>
+                  <p id="cohortDeleteSummary"></p>
+                </div>
+                <button class="secondary-action danger-action" id="showDeleteCohort" type="button">
+                  <i data-lucide="trash-2" aria-hidden="true"></i>
+                  <span>Delete Cohort</span>
+                </button>
+              </div>
+              <div class="cohort-delete-confirmation" id="cohortDeleteConfirmation" hidden>
+                <p>This permanently deletes the cohort, its records, photos, generated cards, thumbnails, icon, and custom templates.</p>
+                <label class="field" for="cohortDeletePhrase">
+                  <span>Type <strong>DELETE</strong> to confirm</span>
+                  <input id="cohortDeletePhrase" type="text" autocomplete="off" spellcheck="false">
+                </label>
+                <div class="cohort-delete-actions">
+                  <button class="secondary-action" id="cancelDeleteCohort" type="button">Cancel</button>
+                  <button class="primary-action restore-action" id="confirmDeleteCohort" type="button" disabled>
+                    <i data-lucide="trash-2" aria-hidden="true"></i>
+                    <span>Delete Permanently</span>
+                  </button>
+                </div>
+              </div>
+            </section>
           </div>
           <div class="modal-actions">
             <button class="secondary-action" id="cancelCohort" type="button">Cancel</button>

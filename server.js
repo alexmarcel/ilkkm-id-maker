@@ -20,6 +20,10 @@ const THUMBNAILS_DIR = process.env.THUMBNAILS_DIR || path.join(DATA_DIR, 'thumbn
 const COHORT_ICONS_DIR = process.env.COHORT_ICONS_DIR || path.join(DATA_DIR, 'cohort-icons');
 const COHORT_TEMPLATES_DIR = process.env.COHORT_TEMPLATES_DIR || path.join(DATA_DIR, 'cohort-templates');
 const APP_ASSETS_DIR = process.env.APP_ASSETS_DIR || path.join(DATA_DIR, 'app-assets');
+const FULL_BACKUP_TEMP_DIR = path.join(DATA_DIR, 'backup-temp');
+const MAX_FULL_RESTORE_SIZE = Number(process.env.MAX_FULL_RESTORE_SIZE || 2 * 1024 * 1024 * 1024);
+const MAX_FULL_UNCOMPRESSED_SIZE = Number(process.env.MAX_FULL_UNCOMPRESSED_SIZE || 5 * 1024 * 1024 * 1024);
+const MAX_FULL_BACKUP_ENTRIES = Number(process.env.MAX_FULL_BACKUP_ENTRIES || 100000);
 const DEFAULT_PROGRAM = 'DIPLOMA KEJURURAWATAN';
 const DEFAULT_SESI = 'SESI JANUARI 2026 - DISEMBER 2028';
 const DEFAULT_APP_NAME = 'ILKKM ID CARD';
@@ -37,6 +41,9 @@ const THUMBNAIL_WIDTH = 720;
 const FONT_PATH = path.join(ROOT_DIR, 'assets', 'fonts', 'liberation-sans-bold.ttf');
 const FRONT_TEMPLATE_PATH = path.join(ROOT_DIR, 'front.jpg');
 const BACK_TEMPLATE_PATH = path.join(ROOT_DIR, 'back.jpg');
+const STAFF_FRONT_TEMPLATE_PATH = path.join(ROOT_DIR, 'assets', 'staff-front.jpg');
+const STAFF_BACK_TEMPLATE_PATH = path.join(ROOT_DIR, 'assets', 'staff-back.jpg');
+const VALID_COHORT_TYPES = new Set(['student', 'staff']);
 const CARD_LAYOUT = {
   front: {
     photo: { x: 622, y: 1097, width: 727, height: 994 },
@@ -96,6 +103,19 @@ const CARD_LAYOUT = {
     },
   },
 };
+const STAFF_CARD_LAYOUT = {
+  front: {
+    staffNumber: { x: 1530, y: 105, maxWidth: 360, fontSize: 92, minFontSize: 48 },
+    photo: { x: 653, y: 1020, width: 661, height: 904 },
+    name: { x: 984, centerY: 2180, maxWidth: 1520, fontSize: 116, minFontSize: 58, lineHeight: 128, color: '#fff' },
+    ic: { x: 984, y: 2660, maxWidth: 1320, fontSize: 94, minFontSize: 48, color: '#000' },
+    jobTitle: { x: 984, centerY: 2890, maxWidth: 1520, fontSize: 94, minFontSize: 46, lineHeight: 108, color: '#000' },
+  },
+  back: {
+    supervisorName: { x: 984, centerY: 2700, maxWidth: 1600, fontSize: 82, minFontSize: 42, lineHeight: 94 },
+    supervisorTitle: { x: 984, y: 2900, maxWidth: 1500, fontSize: 78, minFontSize: 40 },
+  },
+};
 
 fs.mkdirSync(DATA_DIR, { recursive: true });
 fs.mkdirSync(EXPORTS_DIR, { recursive: true });
@@ -104,6 +124,7 @@ fs.mkdirSync(THUMBNAILS_DIR, { recursive: true });
 fs.mkdirSync(COHORT_ICONS_DIR, { recursive: true });
 fs.mkdirSync(COHORT_TEMPLATES_DIR, { recursive: true });
 fs.mkdirSync(APP_ASSETS_DIR, { recursive: true });
+fs.mkdirSync(FULL_BACKUP_TEMP_DIR, { recursive: true });
 
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -145,6 +166,16 @@ const appSettingsUpload = multer({
   },
 });
 
+const megaRestoreUpload = multer({
+  storage: multer.diskStorage({
+    destination: (req, file, callback) => callback(null, FULL_BACKUP_TEMP_DIR),
+    filename: (req, file, callback) => callback(null, `.upload-${Date.now()}-${crypto.randomBytes(6).toString('hex')}.zip`),
+  }),
+  limits: { fileSize: MAX_FULL_RESTORE_SIZE, files: 1 },
+});
+
+let megaRestoreInProgress = false;
+
 const db = new Database(DB_PATH);
 db.pragma('journal_mode = WAL');
 db.exec(`
@@ -158,15 +189,20 @@ db.exec(`
     back_template_filename TEXT,
     accent_color TEXT NOT NULL DEFAULT '#0f8ea3',
     accepting_response_closed INTEGER NOT NULL DEFAULT 0,
+    type TEXT NOT NULL DEFAULT 'student',
+    supervisor_name TEXT,
+    supervisor_title TEXT,
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL,
-    UNIQUE(program, sesi)
+    UNIQUE(program, sesi, type)
   );
 
   CREATE TABLE IF NOT EXISTS students (
     ic_number TEXT PRIMARY KEY,
     name TEXT NOT NULL,
-    matrix_number TEXT NOT NULL,
+    matrix_number TEXT,
+    job_title TEXT,
+    staff_number TEXT,
     program TEXT NOT NULL,
     sesi TEXT NOT NULL,
     photo_filename TEXT NOT NULL,
@@ -204,18 +240,59 @@ if (!studentColumns.includes('cohort_id')) {
 }
 db.exec('CREATE INDEX IF NOT EXISTS idx_students_cohort_id ON students (cohort_id)');
 
+if (!studentColumns.includes('job_title')) {
+  db.exec('ALTER TABLE students ADD COLUMN job_title TEXT');
+}
+if (!studentColumns.includes('staff_number')) {
+  db.exec('ALTER TABLE students ADD COLUMN staff_number TEXT');
+}
+
 const cohortColumns = db.prepare('PRAGMA table_info(cohorts)').all().map((column) => column.name);
-if (!cohortColumns.includes('icon_filename')) {
-  db.exec('ALTER TABLE cohorts ADD COLUMN icon_filename TEXT');
+if (!cohortColumns.includes('icon_filename')) db.exec('ALTER TABLE cohorts ADD COLUMN icon_filename TEXT');
+if (!cohortColumns.includes('accent_color')) db.exec(`ALTER TABLE cohorts ADD COLUMN accent_color TEXT NOT NULL DEFAULT '${DEFAULT_COHORT_COLOR}'`);
+if (!cohortColumns.includes('front_template_filename')) db.exec('ALTER TABLE cohorts ADD COLUMN front_template_filename TEXT');
+if (!cohortColumns.includes('back_template_filename')) db.exec('ALTER TABLE cohorts ADD COLUMN back_template_filename TEXT');
+if (!cohortColumns.includes('type')) {
+  db.pragma('foreign_keys = OFF');
+  db.exec(`
+    BEGIN;
+    ALTER TABLE cohorts RENAME TO cohorts_legacy;
+    CREATE TABLE cohorts (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      slug TEXT NOT NULL UNIQUE,
+      program TEXT NOT NULL,
+      sesi TEXT NOT NULL,
+      icon_filename TEXT,
+      front_template_filename TEXT,
+      back_template_filename TEXT,
+      accent_color TEXT NOT NULL DEFAULT '#0f8ea3',
+      accepting_response_closed INTEGER NOT NULL DEFAULT 0,
+      type TEXT NOT NULL DEFAULT 'student' CHECK(type IN ('student', 'staff')),
+      supervisor_name TEXT,
+      supervisor_title TEXT,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      UNIQUE(program, sesi, type)
+    );
+    INSERT INTO cohorts (
+      id, slug, program, sesi, icon_filename, front_template_filename,
+      back_template_filename, accent_color, accepting_response_closed,
+      type, created_at, updated_at
+    )
+    SELECT id, slug, program, sesi, icon_filename, front_template_filename,
+      back_template_filename, accent_color, accepting_response_closed,
+      'student', created_at, updated_at
+    FROM cohorts_legacy;
+    DROP TABLE cohorts_legacy;
+    COMMIT;
+  `);
+  db.pragma('foreign_keys = ON');
 }
-if (!cohortColumns.includes('accent_color')) {
-  db.exec(`ALTER TABLE cohorts ADD COLUMN accent_color TEXT NOT NULL DEFAULT '${DEFAULT_COHORT_COLOR}'`);
+if (cohortColumns.includes('type') && !cohortColumns.includes('supervisor_name')) {
+  db.exec('ALTER TABLE cohorts ADD COLUMN supervisor_name TEXT');
 }
-if (!cohortColumns.includes('front_template_filename')) {
-  db.exec('ALTER TABLE cohorts ADD COLUMN front_template_filename TEXT');
-}
-if (!cohortColumns.includes('back_template_filename')) {
-  db.exec('ALTER TABLE cohorts ADD COLUMN back_template_filename TEXT');
+if (cohortColumns.includes('type') && !cohortColumns.includes('supervisor_title')) {
+  db.exec('ALTER TABLE cohorts ADD COLUMN supervisor_title TEXT');
 }
 
 function getSetting(key, fallback = '') {
@@ -282,8 +359,15 @@ function slugify(value) {
     .replace(/^_+|_+$/g, '');
 }
 
-function getCohortSlug(program, sesi) {
-  return `${slugify(program)}_${slugify(sesi)}`;
+function normalizeCohortType(value) {
+  const type = String(value || 'student').trim().toLowerCase();
+  if (!VALID_COHORT_TYPES.has(type)) throw new Error('Type must be student or staff.');
+  return type;
+}
+
+function getCohortSlug(program, sesi, type = 'student') {
+  const base = `${slugify(program)}_${slugify(sesi)}`;
+  return normalizeCohortType(type) === 'staff' ? `${base}_STAFF` : base;
 }
 
 function normalizeProgramSesi(program, sesi) {
@@ -316,6 +400,9 @@ function serializeCohort(cohort, recordCount = null) {
     slug: cohort.slug,
     program: cohort.program,
     sesi: cohort.sesi,
+    type: cohort.type || 'student',
+    supervisorName: cohort.supervisor_name || '',
+    supervisorTitle: cohort.supervisor_title || '',
     iconUrl: cohort.icon_filename
       ? `/api/cohorts/${encodeURIComponent(cohort.slug)}/icon?v=${encodeURIComponent(cohort.updated_at || '')}`
       : null,
@@ -342,7 +429,7 @@ function serializeCohort(cohort, recordCount = null) {
 
 function getCohortBySlug(slug) {
   return db.prepare(`
-    SELECT id, slug, program, sesi, icon_filename, front_template_filename, back_template_filename, accent_color, accepting_response_closed, created_at, updated_at
+    SELECT id, slug, program, sesi, type, supervisor_name, supervisor_title, icon_filename, front_template_filename, back_template_filename, accent_color, accepting_response_closed, created_at, updated_at
     FROM cohorts
     WHERE slug = ?
   `).get(String(slug || '').trim());
@@ -350,38 +437,40 @@ function getCohortBySlug(slug) {
 
 function getCohortById(id) {
   return db.prepare(`
-    SELECT id, slug, program, sesi, icon_filename, front_template_filename, back_template_filename, accent_color, accepting_response_closed, created_at, updated_at
+    SELECT id, slug, program, sesi, type, supervisor_name, supervisor_title, icon_filename, front_template_filename, back_template_filename, accent_color, accepting_response_closed, created_at, updated_at
     FROM cohorts
     WHERE id = ?
   `).get(Number(id || 0));
 }
 
-function getCohortByProgramSesi(program, sesi) {
+function getCohortByProgramSesi(program, sesi, type = 'student') {
   const normalized = normalizeProgramSesi(program, sesi);
   return db.prepare(`
-    SELECT id, slug, program, sesi, icon_filename, front_template_filename, back_template_filename, accent_color, accepting_response_closed, created_at, updated_at
+    SELECT id, slug, program, sesi, type, supervisor_name, supervisor_title, icon_filename, front_template_filename, back_template_filename, accent_color, accepting_response_closed, created_at, updated_at
     FROM cohorts
-    WHERE program = ? AND sesi = ?
-  `).get(normalized.program, normalized.sesi);
+    WHERE program = ? AND sesi = ? AND type = ?
+  `).get(normalized.program, normalized.sesi, normalizeCohortType(type));
 }
 
 function createCohort(program, sesi, options = {}) {
   const normalized = normalizeProgramSesi(program, sesi);
-  const slug = getCohortSlug(normalized.program, normalized.sesi);
+  const type = normalizeCohortType(options.type);
+  const slug = getCohortSlug(normalized.program, normalized.sesi, type);
   const now = new Date().toISOString();
   const acceptingResponseClosed = options.acceptingResponseClosed ? 1 : 0;
   const accentColor = normalizeColor(options.accentColor);
 
   db.prepare(`
-    INSERT INTO cohorts (slug, program, sesi, icon_filename, accent_color, accepting_response_closed, created_at, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-  `).run(slug, normalized.program, normalized.sesi, options.iconFilename || null, accentColor, acceptingResponseClosed, now, now);
+    INSERT INTO cohorts (slug, program, sesi, type, supervisor_name, supervisor_title, icon_filename, accent_color, accepting_response_closed, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(slug, normalized.program, normalized.sesi, type, options.supervisorName || null, options.supervisorTitle || null, options.iconFilename || null, accentColor, acceptingResponseClosed, now, now);
 
   return getCohortBySlug(slug);
 }
 
 function getOrCreateCohort(program, sesi, options = {}) {
-  return getCohortByProgramSesi(program, sesi) || createCohort(program, sesi, options);
+  const type = options.type || 'student';
+  return getCohortByProgramSesi(program, sesi, type) || createCohort(program, sesi, options);
 }
 
 function getDefaultCohort() {
@@ -538,6 +627,9 @@ function getCohortTemplatePath(cohort, side) {
     return customPath;
   }
 
+  if ((cohort?.type || 'student') === 'staff') {
+    return side === 'front' ? STAFF_FRONT_TEMPLATE_PATH : STAFF_BACK_TEMPLATE_PATH;
+  }
   return side === 'front' ? FRONT_TEMPLATE_PATH : BACK_TEMPLATE_PATH;
 }
 
@@ -589,7 +681,7 @@ async function getCardThumbnailPath(student, side) {
 
 function getStudent(icNumber) {
   return db.prepare(`
-    SELECT ic_number, cohort_id, name, matrix_number, program, sesi, photo_filename, front_filename, back_filename, created_at, updated_at
+    SELECT ic_number, cohort_id, name, matrix_number, job_title, staff_number, program, sesi, photo_filename, front_filename, back_filename, created_at, updated_at
     FROM students
     WHERE ic_number = ?
   `).get(icNumber);
@@ -617,7 +709,7 @@ function getStudents(program, sesi) {
 
 function getStudentsByCohort(cohort) {
   return db.prepare(`
-    SELECT ic_number, cohort_id, name, matrix_number, program, sesi, photo_filename, front_filename, back_filename, created_at, updated_at
+    SELECT ic_number, cohort_id, name, matrix_number, job_title, staff_number, program, sesi, photo_filename, front_filename, back_filename, created_at, updated_at
     FROM students
     WHERE cohort_id = ?
     ORDER BY name COLLATE NOCASE, ic_number
@@ -677,21 +769,27 @@ function getDatasetSummaryForCohort(cohort) {
   return {
     program,
     sesi,
+    cohortType: cohort.type || 'student',
+    supervisorName: cohort.supervisor_name || '',
+    supervisorTitle: cohort.supervisor_title || '',
     cohortSlug,
     counts,
   };
 }
 
-function getBackupManifest(program, sesi) {
-  const cohort = getOrCreateCohort(program, sesi);
+function getBackupManifest(cohort) {
+  const { program, sesi } = cohort;
   const summary = getDatasetSummaryForCohort(cohort);
   return {
     app: 'ilkkm-id-card-generator',
     type: 'cohort-dataset',
-    version: 1,
+    version: 2,
     exportedAt: new Date().toISOString(),
     program,
     sesi,
+    cohortType: cohort.type || 'student',
+    supervisorName: cohort.supervisor_name || '',
+    supervisorTitle: cohort.supervisor_title || '',
     cohortSlug: summary.cohortSlug,
     templates: {
       front: cohort.front_template_filename ? path.basename(cohort.front_template_filename) : null,
@@ -790,13 +888,13 @@ function escapeSvg(value) {
     .replace(/"/g, '&quot;');
 }
 
-function textElement(text, x, y, fontSize, anchor = 'start') {
-  return `<text x="${x}" y="${y}" font-size="${fontSize}" text-anchor="${anchor}">${escapeSvg(text)}</text>`;
+function textElement(text, x, y, fontSize, anchor = 'start', color = '') {
+  return `<text x="${x}" y="${y}" font-size="${fontSize}" text-anchor="${anchor}"${color ? ` style="fill:${color}"` : ''}>${escapeSvg(text)}</text>`;
 }
 
 function fittedTextElement(text, config, anchor = 'start') {
   const size = fitTextSize(text, config.maxWidth, config.fontSize, config.minFontSize);
-  return textElement(text, config.x, config.y, size, anchor);
+  return textElement(text, config.x, config.y, size, anchor, config.color);
 }
 
 function centeredWrappedNameElements(text, config) {
@@ -807,7 +905,7 @@ function centeredWrappedNameElements(text, config) {
     : config.centerY - lineHeight / 2;
 
   return wrapped.lines
-    .map((line, index) => textElement(line, config.x, firstY + index * lineHeight, wrapped.size, 'middle'))
+    .map((line, index) => textElement(line, config.x, firstY + index * lineHeight, wrapped.size, 'middle', config.color))
     .join('');
 }
 
@@ -832,7 +930,7 @@ function buildTextSvg(elements) {
           text {
             font-family: IDCardFont, Arial, sans-serif;
             font-weight: 700;
-            fill: #000;
+             fill: #000;
             dominant-baseline: alphabetic;
           }
         </style>
@@ -847,6 +945,8 @@ function getStudentRenderData(student) {
     ic: String(student.ic_number || '').trim().toUpperCase(),
     name: String(student.name || '').trim().toUpperCase(),
     matrix: String(student.matrix_number || '').trim().toUpperCase(),
+    jobTitle: String(student.job_title || '').trim().toUpperCase(),
+    staffNumber: String(student.staff_number || '').trim().toUpperCase(),
     program: String(student.program || DEFAULT_PROGRAM).trim().toUpperCase(),
     sesi: String(student.sesi || DEFAULT_SESI).trim().toUpperCase(),
   };
@@ -864,23 +964,33 @@ async function renderStudentCards(student) {
     throw new Error('Saved photo not found.');
   }
 
-  const photoBox = CARD_LAYOUT.front.photo;
+  const isStaff = renderCohort?.type === 'staff';
+  const layout = isStaff ? STAFF_CARD_LAYOUT : CARD_LAYOUT;
+  const photoBox = layout.front.photo;
   const photoBuffer = await sharp(photoPath)
     .resize(photoBox.width, photoBox.height, { fit: 'cover', position: 'centre' })
     .jpeg({ quality: 95 })
     .toBuffer();
 
-  const frontTextSvg = buildTextSvg([
-    centeredWrappedNameElements(data.name, CARD_LAYOUT.front.name),
-    fittedTextElement(data.matrix, CARD_LAYOUT.front.matrix, 'middle'),
+  const frontTextSvg = isStaff ? buildTextSvg([
+    data.staffNumber ? fittedTextElement(`No. ${data.staffNumber}`, layout.front.staffNumber, 'middle') : '',
+    centeredWrappedNameElements(data.name, layout.front.name),
+    fittedTextElement(data.ic, layout.front.ic, 'middle'),
+    centeredWrappedNameElements(data.jobTitle, layout.front.jobTitle),
+  ]) : buildTextSvg([
+    centeredWrappedNameElements(data.name, layout.front.name),
+    fittedTextElement(data.matrix, layout.front.matrix, 'middle'),
   ]);
 
-  const backTextSvg = buildTextSvg([
-    leftWrappedNameElements(data.name, CARD_LAYOUT.back.name),
-    fittedTextElement(data.matrix, CARD_LAYOUT.back.matrix),
-    fittedTextElement(data.ic, CARD_LAYOUT.back.ic),
-    leftWrappedNameElements(data.program, CARD_LAYOUT.back.program),
-    fittedTextElement(data.sesi, CARD_LAYOUT.back.sesi),
+  const backTextSvg = isStaff ? buildTextSvg([
+    centeredWrappedNameElements(renderCohort.supervisor_name, layout.back.supervisorName),
+    fittedTextElement(renderCohort.supervisor_title, layout.back.supervisorTitle, 'middle'),
+  ]) : buildTextSvg([
+    leftWrappedNameElements(data.name, layout.back.name),
+    fittedTextElement(data.matrix, layout.back.matrix),
+    fittedTextElement(data.ic, layout.back.ic),
+    leftWrappedNameElements(data.program, layout.back.program),
+    fittedTextElement(data.sesi, layout.back.sesi),
   ]);
 
   const frontFilename = `${icSlug}_front.jpg`;
@@ -946,7 +1056,8 @@ async function regenerateStudents(students) {
 }
 
 function getExportCardPath(student, side) {
-  const cohortSlug = getCohortSlug(student.program, student.sesi);
+  const cohort = getCohortById(student.cohort_id);
+  const cohortSlug = cohort?.slug || getCohortSlug(student.program, student.sesi);
   const cohortExportDir = path.join(EXPORTS_DIR, cohortSlug);
   const filename = side === 'front' ? student.front_filename : student.back_filename;
   return resolveInside(cohortExportDir, filename);
@@ -983,7 +1094,7 @@ function assertSafeBackupFilename(filename, label) {
   return safeName;
 }
 
-function validateStudentBackupRows(rows, program, sesi) {
+function validateStudentBackupRows(rows, program, sesi, cohortType = 'student') {
   if (!Array.isArray(rows)) {
     throw new Error('students.json must contain an array.');
   }
@@ -1014,8 +1125,11 @@ function validateStudentBackupRows(rows, program, sesi) {
       throw new Error(`Backup contains a blank name for ${icNumber}.`);
     }
 
-    if (!VALID_MATRIX_PATTERN.test(matrixNumber)) {
+    if (cohortType === 'student' && !VALID_MATRIX_PATTERN.test(matrixNumber)) {
       throw new Error(`Backup contains invalid matrix number for ${icNumber}.`);
+    }
+    if (cohortType === 'staff' && !String(student.job_title || '').trim()) {
+      throw new Error(`Backup contains a blank job title for ${icNumber}.`);
     }
 
     if (rowProgram !== selectedProgram || rowSesi !== selectedSesi) {
@@ -1037,7 +1151,8 @@ async function readZipJson(entry, label) {
   }
 }
 
-async function parseDatasetBackup(file, program, sesi) {
+async function parseDatasetBackup(file, cohort) {
+  const { program, sesi } = cohort;
   if (!file || !/\.zip$/i.test(file.originalname || '')) {
     throw new Error('Restore file must be a ZIP backup.');
   }
@@ -1076,7 +1191,7 @@ async function parseDatasetBackup(file, program, sesi) {
     throw new Error('Backup manifest is not for this app.');
   }
 
-  if (Number(manifest.version) !== 1) {
+  if (![1, 2].includes(Number(manifest.version))) {
     throw new Error('Backup version is not supported.');
   }
 
@@ -1087,11 +1202,15 @@ async function parseDatasetBackup(file, program, sesi) {
     throw new Error('Backup Program/Sesi does not match the selected filters.');
   }
 
-  if (manifest.cohortSlug !== getCohortSlug(program, sesi) || path.basename(manifest.cohortSlug) !== manifest.cohortSlug) {
+  const manifestType = Number(manifest.version) === 1 ? 'student' : normalizeCohortType(manifest.cohortType);
+  if (manifestType !== cohort.type) {
+    throw new Error('Backup cohort type does not match the selected cohort.');
+  }
+  if (manifest.cohortSlug !== cohort.slug || path.basename(manifest.cohortSlug) !== manifest.cohortSlug) {
     throw new Error('Backup cohort folder does not match the selected filters.');
   }
 
-  validateStudentBackupRows(students, program, sesi);
+  validateStudentBackupRows(students, program, sesi, cohort.type);
 
   const externalIcConflict = students.find((student) => {
     const existing = getStudent(student.ic_number);
@@ -1177,8 +1296,7 @@ async function parseDatasetBackup(file, program, sesi) {
   };
 }
 
-async function restoreCohortBackup(parsed, program, sesi) {
-  const cohort = getOrCreateCohort(program, sesi);
+async function restoreCohortBackup(parsed, cohort) {
   const currentStudents = getStudentsByCohort(cohort);
   const cohortSlug = cohort.slug;
   const cohortExportDir = path.join(EXPORTS_DIR, cohortSlug);
@@ -1189,14 +1307,21 @@ async function restoreCohortBackup(parsed, program, sesi) {
 
   const restoreTransaction = db.transaction((students) => {
     db.prepare('DELETE FROM students WHERE cohort_id = ?').run(cohort.id);
+    if (cohort.type === 'staff') {
+      const supervisorName = String(parsed.manifest.supervisorName || cohort.supervisor_name || '').trim().toUpperCase();
+      const supervisorTitle = String(parsed.manifest.supervisorTitle || cohort.supervisor_title || '').trim().toUpperCase();
+      if (!supervisorName || !supervisorTitle) throw new Error('Staff backup is missing supervisor details.');
+      db.prepare('UPDATE cohorts SET supervisor_name = ?, supervisor_title = ?, updated_at = ? WHERE id = ?')
+        .run(supervisorName, supervisorTitle, new Date().toISOString(), cohort.id);
+    }
 
     const insert = db.prepare(`
       INSERT INTO students (
-        ic_number, cohort_id, name, matrix_number, program, sesi,
+        ic_number, cohort_id, name, matrix_number, job_title, staff_number, program, sesi,
         photo_filename, front_filename, back_filename,
         created_at, updated_at
       )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
     students.forEach((student) => {
@@ -1204,7 +1329,9 @@ async function restoreCohortBackup(parsed, program, sesi) {
         student.ic_number,
         cohort.id,
         String(student.name).trim().toUpperCase(),
-        String(student.matrix_number).trim().toUpperCase(),
+        String(student.matrix_number || '').trim().toUpperCase(),
+        student.job_title ? String(student.job_title).trim().toUpperCase() : null,
+        student.staff_number ? String(student.staff_number).trim().toUpperCase() : null,
         cohort.program,
         cohort.sesi,
         path.basename(student.photo_filename),
@@ -1302,6 +1429,407 @@ async function restoreCohortBackup(parsed, program, sesi) {
   }
 }
 
+const MEGA_MANAGED_DIRS = {
+  photos: PHOTOS_DIR,
+  exports: EXPORTS_DIR,
+  'cohort-icons': COHORT_ICONS_DIR,
+  'cohort-templates': COHORT_TEMPLATES_DIR,
+  'app-assets': APP_ASSETS_DIR,
+};
+
+function sha256Buffer(buffer) {
+  return crypto.createHash('sha256').update(buffer).digest('hex');
+}
+
+function sha256File(filePath) {
+  const hash = crypto.createHash('sha256');
+  const handle = fs.openSync(filePath, 'r');
+  const buffer = Buffer.allocUnsafe(1024 * 1024);
+  try {
+    let bytesRead;
+    do {
+      bytesRead = fs.readSync(handle, buffer, 0, buffer.length, null);
+      if (bytesRead) hash.update(buffer.subarray(0, bytesRead));
+    } while (bytesRead);
+  } finally {
+    fs.closeSync(handle);
+  }
+  return hash.digest('hex');
+}
+
+function listFilesRecursive(baseDir, relativeDir = '') {
+  if (!fs.existsSync(baseDir)) return [];
+  const current = path.join(baseDir, relativeDir);
+  return fs.readdirSync(current, { withFileTypes: true }).flatMap((entry) => {
+    const relativePath = path.posix.join(relativeDir.replace(/\\/g, '/'), entry.name);
+    if (entry.isDirectory()) return listFilesRecursive(baseDir, relativePath);
+    if (!entry.isFile()) return [];
+    return [{ path: relativePath, filePath: path.join(baseDir, relativePath) }];
+  });
+}
+
+function getMegaDatabaseData() {
+  return {
+    cohorts: db.prepare('SELECT * FROM cohorts ORDER BY id').all(),
+    students: db.prepare('SELECT * FROM students ORDER BY ic_number').all(),
+    settings: db.prepare('SELECT * FROM settings ORDER BY key').all(),
+    gameScores: db.prepare('SELECT * FROM game_scores ORDER BY id').all(),
+  };
+}
+
+function buildMegaSnapshot() {
+  const database = getMegaDatabaseData();
+  const entries = [];
+  const databaseEntries = {
+    'database/cohorts.json': Buffer.from(JSON.stringify(database.cohorts, null, 2)),
+    'database/students.json': Buffer.from(JSON.stringify(database.students, null, 2)),
+    'database/settings.json': Buffer.from(JSON.stringify(database.settings, null, 2)),
+    'database/game-scores.json': Buffer.from(JSON.stringify(database.gameScores, null, 2)),
+  };
+  Object.entries(databaseEntries).forEach(([entryPath, buffer]) => {
+    entries.push({ path: entryPath, size: buffer.length, sha256: sha256Buffer(buffer), buffer });
+  });
+  Object.entries(MEGA_MANAGED_DIRS).forEach(([prefix, directory]) => {
+    listFilesRecursive(directory).forEach((file) => {
+      const stat = fs.statSync(file.filePath);
+      entries.push({ path: `${prefix}/${file.path}`, size: stat.size, sha256: sha256File(file.filePath), filePath: file.filePath });
+    });
+  });
+  const fileCounts = Object.fromEntries(Object.keys(MEGA_MANAGED_DIRS).map((key) => [key, entries.filter((entry) => entry.path.startsWith(`${key}/`)).length]));
+  const manifest = {
+    app: 'ilkkm-id-card-generator',
+    type: 'mega-backup',
+    version: 1,
+    schemaVersion: 1,
+    exportedAt: new Date().toISOString(),
+    counts: {
+      cohorts: database.cohorts.length,
+      studentCohorts: database.cohorts.filter((row) => row.type === 'student').length,
+      staffCohorts: database.cohorts.filter((row) => row.type === 'staff').length,
+      records: database.students.length,
+      settings: database.settings.length,
+      gameScores: database.gameScores.length,
+      ...fileCounts,
+    },
+    files: entries.map(({ path: entryPath, size, sha256 }) => ({ path: entryPath, size, sha256 })),
+  };
+  return { manifest, entries };
+}
+
+function writeMegaArchive(destination, snapshot = buildMegaSnapshot()) {
+  return new Promise((resolve, reject) => {
+    const output = typeof destination === 'string' ? fs.createWriteStream(destination) : destination;
+    const archive = archiver('zip', { zlib: { level: 9 } });
+    output.on('close', () => resolve(snapshot));
+    output.on('error', reject);
+    archive.on('error', reject);
+    archive.pipe(output);
+    archive.append(JSON.stringify(snapshot.manifest, null, 2), { name: 'manifest.json' });
+    snapshot.entries.forEach((entry) => {
+      if (entry.buffer) archive.append(entry.buffer, { name: entry.path });
+      else archive.file(entry.filePath, { name: entry.path });
+    });
+    archive.finalize();
+  });
+}
+
+function validateMegaDatabase(database, manifest) {
+  const { cohorts, students, settings, gameScores } = database;
+  if (![cohorts, students, settings, gameScores].every(Array.isArray)) throw new Error('Backup database datasets are invalid.');
+  const cohortIds = new Set();
+  const slugs = new Set();
+  const cohortKeys = new Set();
+  cohorts.forEach((cohort) => {
+    const type = normalizeCohortType(cohort.type);
+    const slug = String(cohort.slug || '').trim();
+    const key = `${normalizeCohortValue(cohort.program)}\u0000${normalizeCohortValue(cohort.sesi)}\u0000${type}`;
+    if (!Number.isInteger(Number(cohort.id)) || cohortIds.has(Number(cohort.id))) throw new Error('Backup contains duplicate or invalid cohort IDs.');
+    if (!slug || path.basename(slug) !== slug || slugs.has(slug)) throw new Error('Backup contains duplicate or invalid cohort slugs.');
+    if (cohortKeys.has(key)) throw new Error('Backup contains duplicate Program/Sesi/Type cohorts.');
+    if (type === 'staff' && (!String(cohort.supervisor_name || '').trim() || !String(cohort.supervisor_title || '').trim())) throw new Error(`Staff cohort ${slug} is missing supervisor details.`);
+    cohortIds.add(Number(cohort.id)); slugs.add(slug); cohortKeys.add(key);
+  });
+  const seenIc = new Set();
+  students.forEach((student) => {
+    const ic = String(student.ic_number || '').trim();
+    const cohort = cohorts.find((row) => Number(row.id) === Number(student.cohort_id));
+    if (!VALID_IC_PATTERN.test(ic) || seenIc.has(ic)) throw new Error(`Backup contains duplicate or invalid IC number: ${ic || 'blank'}.`);
+    if (!cohort) throw new Error(`Record ${ic} references a missing cohort.`);
+    if (!String(student.name || '').trim()) throw new Error(`Record ${ic} has a blank name.`);
+    if (cohort.type === 'student' && !VALID_MATRIX_PATTERN.test(String(student.matrix_number || '').trim().toUpperCase())) throw new Error(`Record ${ic} has an invalid matrix number.`);
+    if (cohort.type === 'staff' && !String(student.job_title || '').trim()) throw new Error(`Record ${ic} has a blank job title.`);
+    seenIc.add(ic);
+  });
+  if (new Set(settings.map((row) => row.key)).size !== settings.length) throw new Error('Backup contains duplicate setting keys.');
+  if (manifest.counts.cohorts !== cohorts.length || manifest.counts.records !== students.length || manifest.counts.settings !== settings.length || manifest.counts.gameScores !== gameScores.length) throw new Error('Backup database counts do not match the manifest.');
+}
+
+async function parseMegaBackup(filePath) {
+  if (!filePath || !fs.existsSync(filePath)) throw new Error('Mega backup ZIP is required.');
+  const directory = await unzipper.Open.file(filePath);
+  if (directory.files.length > MAX_FULL_BACKUP_ENTRIES) throw new Error('Mega backup contains too many entries.');
+  const entries = new Map();
+  let uncompressedSize = 0;
+  directory.files.forEach((entry) => {
+    const entryPath = String(entry.path || '').replace(/\\/g, '/');
+    if (!isSafeZipPath(entryPath) || entries.has(entryPath)) throw new Error(`Mega backup contains an unsafe or duplicate path: ${entryPath}.`);
+    uncompressedSize += Number(entry.uncompressedSize || 0);
+    if (uncompressedSize > MAX_FULL_UNCOMPRESSED_SIZE) throw new Error('Mega backup expands beyond the allowed size.');
+    if (entry.type === 'File') entries.set(entryPath, entry);
+  });
+  const requiredJson = ['manifest.json', 'database/cohorts.json', 'database/students.json', 'database/settings.json', 'database/game-scores.json'];
+  requiredJson.forEach((entryPath) => { if (!entries.has(entryPath)) throw new Error(`Mega backup is missing ${entryPath}.`); });
+  const manifest = await readZipJson(entries.get('manifest.json'), 'manifest.json');
+  if (manifest.app !== 'ilkkm-id-card-generator' || manifest.type !== 'mega-backup' || Number(manifest.version) !== 1) throw new Error('Mega backup format or version is not supported.');
+  if (!Array.isArray(manifest.files)) throw new Error('Mega backup file manifest is invalid.');
+  const declared = new Map();
+  manifest.files.forEach((file) => {
+    if (!isSafeZipPath(file.path) || declared.has(file.path)) throw new Error(`Manifest contains an unsafe or duplicate path: ${file.path}.`);
+    declared.set(file.path, file);
+  });
+  const database = {
+    cohorts: await readZipJson(entries.get('database/cohorts.json'), 'cohorts.json'),
+    students: await readZipJson(entries.get('database/students.json'), 'students.json'),
+    settings: await readZipJson(entries.get('database/settings.json'), 'settings.json'),
+    gameScores: await readZipJson(entries.get('database/game-scores.json'), 'game-scores.json'),
+  };
+  validateMegaDatabase(database, manifest);
+  for (const [entryPath, file] of declared) {
+    const entry = entries.get(entryPath);
+    if (!entry) throw new Error(`Mega backup is missing ${entryPath}.`);
+    const buffer = await entry.buffer();
+    if (buffer.length !== Number(file.size) || sha256Buffer(buffer) !== file.sha256) throw new Error(`Integrity check failed for ${entryPath}.`);
+  }
+  for (const entryPath of entries.keys()) {
+    if (entryPath !== 'manifest.json' && !declared.has(entryPath)) throw new Error(`Mega backup contains undeclared file ${entryPath}.`);
+  }
+  const requiredFiles = new Set();
+  database.students.forEach((student) => {
+    const cohort = database.cohorts.find((row) => Number(row.id) === Number(student.cohort_id));
+    requiredFiles.add(`photos/${path.basename(student.photo_filename)}`);
+    requiredFiles.add(`exports/${cohort.slug}/${path.basename(student.front_filename)}`);
+    requiredFiles.add(`exports/${cohort.slug}/${path.basename(student.back_filename)}`);
+  });
+  database.cohorts.forEach((cohort) => {
+    if (cohort.icon_filename) requiredFiles.add(`cohort-icons/${path.basename(cohort.icon_filename)}`);
+    if (cohort.front_template_filename) requiredFiles.add(`cohort-templates/${path.basename(cohort.front_template_filename)}`);
+    if (cohort.back_template_filename) requiredFiles.add(`cohort-templates/${path.basename(cohort.back_template_filename)}`);
+  });
+  requiredFiles.forEach((entryPath) => { if (!declared.has(entryPath)) throw new Error(`Mega backup is missing required file ${entryPath}.`); });
+  return {
+    manifest, database, directory, declared,
+    summary: { ...manifest.counts, archiveSize: fs.statSync(filePath).size, uncompressedSize, warnings: [] },
+  };
+}
+
+function replaceMegaDatabase(database) {
+  const operation = db.transaction(() => {
+    db.prepare('DELETE FROM students').run();
+    db.prepare('DELETE FROM cohorts').run();
+    db.prepare('DELETE FROM settings').run();
+    db.prepare('DELETE FROM game_scores').run();
+    const cohortInsert = db.prepare(`INSERT INTO cohorts (
+      id, slug, program, sesi, icon_filename, front_template_filename, back_template_filename,
+      accent_color, accepting_response_closed, type, supervisor_name, supervisor_title, created_at, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
+    database.cohorts.forEach((row) => cohortInsert.run(row.id, row.slug, row.program, row.sesi, row.icon_filename || null, row.front_template_filename || null, row.back_template_filename || null, row.accent_color || DEFAULT_COHORT_COLOR, Number(row.accepting_response_closed || 0), row.type || 'student', row.supervisor_name || null, row.supervisor_title || null, row.created_at, row.updated_at));
+    const studentInsert = db.prepare(`INSERT INTO students (
+      ic_number, name, matrix_number, program, sesi, photo_filename, front_filename, back_filename,
+      created_at, updated_at, cohort_id, job_title, staff_number
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
+    database.students.forEach((row) => studentInsert.run(row.ic_number, row.name, row.matrix_number || '', row.program, row.sesi, row.photo_filename, row.front_filename, row.back_filename, row.created_at, row.updated_at, row.cohort_id, row.job_title || null, row.staff_number || null));
+    const settingInsert = db.prepare('INSERT INTO settings (key, value, updated_at) VALUES (?, ?, ?)');
+    database.settings.forEach((row) => settingInsert.run(row.key, row.value, row.updated_at));
+    const scoreInsert = db.prepare('INSERT INTO game_scores (id, player_code, time_ms, moves, pairs, created_at) VALUES (?, ?, ?, ?, ?, ?)');
+    database.gameScores.forEach((row) => scoreInsert.run(row.id, row.player_code, row.time_ms, row.moves, row.pairs, row.created_at));
+    db.prepare("DELETE FROM sqlite_sequence WHERE name IN ('cohorts', 'game_scores')").run();
+    const maxCohortId = Math.max(0, ...database.cohorts.map((row) => Number(row.id || 0)));
+    const maxScoreId = Math.max(0, ...database.gameScores.map((row) => Number(row.id || 0)));
+    if (maxCohortId) db.prepare("INSERT INTO sqlite_sequence(name, seq) VALUES ('cohorts', ?)").run(maxCohortId);
+    if (maxScoreId) db.prepare("INSERT INTO sqlite_sequence(name, seq) VALUES ('game_scores', ?)").run(maxScoreId);
+  });
+  operation();
+}
+
+async function extractMegaManagedFiles(parsed, stagingDir) {
+  for (const [entryPath] of parsed.declared) {
+    const prefix = entryPath.split('/')[0];
+    if (!Object.prototype.hasOwnProperty.call(MEGA_MANAGED_DIRS, prefix)) continue;
+    const entry = parsed.directory.files.find((item) => String(item.path || '').replace(/\\/g, '/') === entryPath);
+    const outputPath = path.join(stagingDir, ...entryPath.split('/'));
+    fs.mkdirSync(path.dirname(outputPath), { recursive: true });
+    fs.writeFileSync(outputPath, await entry.buffer());
+  }
+  Object.keys(MEGA_MANAGED_DIRS).forEach((prefix) => fs.mkdirSync(path.join(stagingDir, prefix), { recursive: true }));
+}
+
+function restoreInterruptedMegaOperation() {
+  if (!fs.existsSync(MEGA_JOURNAL_PATH)) return;
+  const journal = JSON.parse(fs.readFileSync(MEGA_JOURNAL_PATH, 'utf8'));
+  const recoveryDir = String(journal.recoveryDir || '');
+  const databasePath = path.join(recoveryDir, 'database-before.json');
+  if (!recoveryDir || !fs.existsSync(databasePath)) throw new Error('Mega restore recovery journal is incomplete.');
+  replaceMegaDatabase(JSON.parse(fs.readFileSync(databasePath, 'utf8')));
+  Object.entries(MEGA_MANAGED_DIRS).forEach(([prefix, target]) => {
+    const oldPath = path.join(recoveryDir, prefix);
+    if (fs.existsSync(target)) fs.rmSync(target, { recursive: true, force: true });
+    if (fs.existsSync(oldPath)) fs.renameSync(oldPath, target);
+    else fs.mkdirSync(target, { recursive: true });
+  });
+  fs.rmSync(THUMBNAILS_DIR, { recursive: true, force: true });
+  fs.mkdirSync(THUMBNAILS_DIR, { recursive: true });
+  fs.rmSync(recoveryDir, { recursive: true, force: true });
+  fs.rmSync(MEGA_JOURNAL_PATH, { force: true });
+}
+
+async function performMegaRestore(parsed) {
+  const token = `${Date.now()}-${crypto.randomBytes(5).toString('hex')}`;
+  const stagingDir = path.join(DATA_DIR, `.mega-staging-${token}`);
+  const recoveryDir = path.join(DATA_DIR, `.mega-recovery-${token}`);
+  const databaseBefore = getMegaDatabaseData();
+  fs.mkdirSync(stagingDir, { recursive: true });
+  fs.mkdirSync(recoveryDir, { recursive: true });
+  try {
+    await extractMegaManagedFiles(parsed, stagingDir);
+    fs.writeFileSync(path.join(recoveryDir, 'database-before.json'), JSON.stringify(databaseBefore));
+    fs.writeFileSync(MEGA_JOURNAL_PATH, JSON.stringify({ version: 1, recoveryDir, startedAt: new Date().toISOString() }));
+    Object.entries(MEGA_MANAGED_DIRS).forEach(([prefix, target]) => {
+      if (fs.existsSync(target)) fs.renameSync(target, path.join(recoveryDir, prefix));
+      fs.renameSync(path.join(stagingDir, prefix), target);
+    });
+    replaceMegaDatabase(parsed.database);
+    fs.rmSync(THUMBNAILS_DIR, { recursive: true, force: true });
+    fs.mkdirSync(THUMBNAILS_DIR, { recursive: true });
+    fs.rmSync(recoveryDir, { recursive: true, force: true });
+    fs.rmSync(MEGA_JOURNAL_PATH, { force: true });
+  } catch (error) {
+    if (fs.existsSync(MEGA_JOURNAL_PATH)) restoreInterruptedMegaOperation();
+    throw error;
+  } finally {
+    fs.rmSync(stagingDir, { recursive: true, force: true });
+  }
+}
+
+const RAW_BACKUP_DIRS = {
+  photos: PHOTOS_DIR,
+  exports: EXPORTS_DIR,
+  thumbnails: THUMBNAILS_DIR,
+  'cohort-icons': COHORT_ICONS_DIR,
+  'cohort-templates': COHORT_TEMPLATES_DIR,
+  'app-assets': APP_ASSETS_DIR,
+};
+
+async function writeRawBackupArchive(destination) {
+  const token = `${Date.now()}-${crypto.randomBytes(5).toString('hex')}`;
+  const snapshotDir = path.join(FULL_BACKUP_TEMP_DIR, `.snapshot-${token}`);
+  const snapshotDbPath = path.join(snapshotDir, 'app.sqlite');
+  fs.mkdirSync(snapshotDir, { recursive: true });
+  await db.backup(snapshotDbPath);
+  const manifest = {
+    app: 'ilkkm-id-card-generator',
+    type: 'full-raw-backup',
+    version: 1,
+    schemaVersion: 1,
+    exportedAt: new Date().toISOString(),
+  };
+  return new Promise((resolve, reject) => {
+    const output = typeof destination === 'string' ? fs.createWriteStream(destination) : destination;
+    const archive = archiver('zip', { zlib: { level: 9 } });
+    const cleanup = () => fs.rmSync(snapshotDir, { recursive: true, force: true });
+    output.on('close', () => { cleanup(); resolve(); });
+    output.on('error', (error) => { cleanup(); reject(error); });
+    archive.on('error', (error) => { cleanup(); reject(error); });
+    archive.pipe(output);
+    archive.append(JSON.stringify(manifest, null, 2), { name: 'manifest.json' });
+    archive.file(snapshotDbPath, { name: 'app.sqlite' });
+    Object.entries(RAW_BACKUP_DIRS).forEach(([entryName, directory]) => {
+      if (fs.existsSync(directory)) archive.directory(directory, entryName);
+    });
+    archive.finalize();
+  });
+}
+
+async function extractRawBackup(filePath) {
+  if (!filePath || !fs.existsSync(filePath)) throw new Error('Backup ZIP is required.');
+  const token = `${Date.now()}-${crypto.randomBytes(5).toString('hex')}`;
+  const stagingDir = path.join(DATA_DIR, `.full-restore-${token}`);
+  fs.mkdirSync(stagingDir, { recursive: true });
+  try {
+    const directory = await unzipper.Open.file(filePath);
+    if (directory.files.length > MAX_FULL_BACKUP_ENTRIES) throw new Error('Backup contains too many entries.');
+    const seen = new Set();
+    let totalSize = 0;
+    for (const entry of directory.files) {
+      const entryPath = String(entry.path || '').replace(/\\/g, '/');
+      if (!isSafeZipPath(entryPath) || seen.has(entryPath)) throw new Error(`Backup contains an unsafe or duplicate path: ${entryPath}.`);
+      seen.add(entryPath);
+      totalSize += Number(entry.uncompressedSize || 0);
+      if (totalSize > MAX_FULL_UNCOMPRESSED_SIZE) throw new Error('Backup expands beyond the allowed size.');
+      const topLevel = entryPath.split('/')[0];
+      if (!['manifest.json', 'app.sqlite', ...Object.keys(RAW_BACKUP_DIRS)].includes(topLevel)) throw new Error(`Backup contains an unrecognized path: ${entryPath}.`);
+      if (entry.type !== 'File') continue;
+      const outputPath = path.join(stagingDir, ...entryPath.split('/'));
+      fs.mkdirSync(path.dirname(outputPath), { recursive: true });
+      fs.writeFileSync(outputPath, await entry.buffer());
+    }
+    const manifestPath = path.join(stagingDir, 'manifest.json');
+    const snapshotDbPath = path.join(stagingDir, 'app.sqlite');
+    if (!fs.existsSync(manifestPath) || !fs.existsSync(snapshotDbPath)) throw new Error('Backup must contain manifest.json and app.sqlite.');
+    const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
+    if (manifest.app !== 'ilkkm-id-card-generator' || manifest.type !== 'full-raw-backup' || Number(manifest.version) !== 1 || Number(manifest.schemaVersion) !== 1) throw new Error('Backup format or schema version is not supported.');
+    const snapshotDb = new Database(snapshotDbPath, { readonly: true, fileMustExist: true });
+    try {
+      const tables = new Set(snapshotDb.prepare("SELECT name FROM sqlite_master WHERE type = 'table'").all().map((row) => row.name));
+      ['cohorts', 'students', 'settings', 'game_scores'].forEach((table) => { if (!tables.has(table)) throw new Error(`Backup database is missing ${table}.`); });
+      return {
+        stagingDir,
+        database: {
+          cohorts: snapshotDb.prepare('SELECT * FROM cohorts ORDER BY id').all(),
+          students: snapshotDb.prepare('SELECT * FROM students ORDER BY ic_number').all(),
+          settings: snapshotDb.prepare('SELECT * FROM settings ORDER BY key').all(),
+          gameScores: snapshotDb.prepare('SELECT * FROM game_scores ORDER BY id').all(),
+        },
+      };
+    } finally {
+      snapshotDb.close();
+    }
+  } catch (error) {
+    fs.rmSync(stagingDir, { recursive: true, force: true });
+    throw error;
+  }
+}
+
+function performRawRestore(parsed) {
+  const rollbackDir = path.join(DATA_DIR, `.full-rollback-${Date.now()}-${crypto.randomBytes(5).toString('hex')}`);
+  const databaseBefore = getMegaDatabaseData();
+  fs.mkdirSync(rollbackDir, { recursive: true });
+  const swappedEntries = [];
+  try {
+    Object.entries(RAW_BACKUP_DIRS).forEach(([entryName, target]) => {
+      const staged = path.join(parsed.stagingDir, entryName);
+      fs.mkdirSync(staged, { recursive: true });
+      swappedEntries.push(entryName);
+      if (fs.existsSync(target)) fs.renameSync(target, path.join(rollbackDir, entryName));
+      fs.renameSync(staged, target);
+    });
+    replaceMegaDatabase(parsed.database);
+  } catch (error) {
+    try { replaceMegaDatabase(databaseBefore); } catch (databaseError) { error.databaseRollbackError = databaseError; }
+    if (swappedEntries.length) {
+      Object.entries(RAW_BACKUP_DIRS).filter(([entryName]) => swappedEntries.includes(entryName)).forEach(([entryName, target]) => {
+        const previous = path.join(rollbackDir, entryName);
+        if (fs.existsSync(target)) fs.rmSync(target, { recursive: true, force: true });
+        if (fs.existsSync(previous)) fs.renameSync(previous, target);
+        else fs.mkdirSync(target, { recursive: true });
+      });
+    }
+    throw error;
+  } finally {
+    fs.rmSync(rollbackDir, { recursive: true, force: true });
+    fs.rmSync(parsed.stagingDir, { recursive: true, force: true });
+  }
+}
+
 function requireExportsPassword(req, res, next) {
   const authorization = req.headers.authorization || '';
   const [scheme, encoded] = authorization.split(' ');
@@ -1331,6 +1859,8 @@ function serializeStudentRecords(students) {
     number: index + 1,
     name: student.name,
     matrixNumber: student.matrix_number,
+    jobTitle: student.job_title || '',
+    staffNumber: student.staff_number || '',
     icNumber: student.ic_number,
   }));
 }
@@ -1422,7 +1952,15 @@ app.use('/admin/cohorts/new', requireExportsPassword);
 app.use(/^\/admin\/cohorts\/[^/]+\/edit\/?$/, requireExportsPassword);
 app.use('/admin/app-settings', requireExportsPassword);
 app.use('/admin.html', requireExportsPassword);
-app.use('/api/admin/app-settings', requireExportsPassword);
+app.use('/api/admin', requireExportsPassword);
+
+app.use((req, res, next) => {
+  if (megaRestoreInProgress && !['GET', 'HEAD', 'OPTIONS'].includes(req.method) && req.path !== '/api/admin/restore') {
+    res.status(503).json({ error: 'The application is temporarily in maintenance mode for a full restore.' });
+    return;
+  }
+  next();
+});
 
 app.get('/cohorts/:slug', (req, res) => {
   const cohort = getCohortBySlug(req.params.slug);
@@ -1537,6 +2075,43 @@ app.post('/api/admin/app-settings', appSettingsUpload.fields([
   }
 });
 
+app.get('/api/admin/backup.zip', async (req, res) => {
+  if (megaRestoreInProgress) {
+    res.status(503).json({ error: 'A backup or restore is already in progress.' });
+    return;
+  }
+  megaRestoreInProgress = true;
+  try {
+    res.setHeader('Content-Type', 'application/zip');
+    res.setHeader('Content-Disposition', `attachment; filename="ILKKM_FULL_BACKUP_${new Date().toISOString().slice(0, 10)}.zip"`);
+    await writeRawBackupArchive(res);
+  } catch (error) {
+    if (!res.headersSent) res.status(500).json({ error: error.message || 'Could not create backup.' });
+    else res.destroy(error);
+  } finally {
+    megaRestoreInProgress = false;
+  }
+});
+
+app.post('/api/admin/restore', megaRestoreUpload.single('backup'), async (req, res) => {
+  if (megaRestoreInProgress) {
+    if (req.file?.path) fs.rmSync(req.file.path, { force: true });
+    res.status(409).json({ error: 'A backup or restore is already in progress.' });
+    return;
+  }
+  megaRestoreInProgress = true;
+  try {
+    const parsed = await extractRawBackup(req.file?.path);
+    performRawRestore(parsed);
+    res.json({ restored: true, appSettings: getAppSettings() });
+  } catch (error) {
+    res.status(400).json({ error: error.message || 'Could not restore backup.' });
+  } finally {
+    megaRestoreInProgress = false;
+    if (req.file?.path) fs.rmSync(req.file.path, { force: true });
+  }
+});
+
 app.get('/api/cohorts', (req, res) => {
   const cohorts = db.prepare(`
     SELECT
@@ -1544,6 +2119,9 @@ app.get('/api/cohorts', (req, res) => {
       cohorts.slug,
       cohorts.program,
       cohorts.sesi,
+      cohorts.type,
+      cohorts.supervisor_name,
+      cohorts.supervisor_title,
       cohorts.icon_filename,
       cohorts.front_template_filename,
       cohorts.back_template_filename,
@@ -1715,21 +2293,28 @@ app.post('/api/game/scores', express.json(), (req, res) => {
 app.post('/api/exports/cohorts', cohortIconUpload.single('icon'), async (req, res) => {
   try {
     const normalized = normalizeProgramSesi(req.body?.program, req.body?.sesi);
+    const type = normalizeCohortType(req.body?.type);
+    const supervisorName = String(req.body?.supervisorName || '').trim().toUpperCase();
+    const supervisorTitle = String(req.body?.supervisorTitle || '').trim().toUpperCase();
     if (!normalized.program || !normalized.sesi) {
       res.status(400).json({ error: 'Program and sesi are required.' });
       return;
     }
 
-    const existing = getCohortByProgramSesi(normalized.program, normalized.sesi);
+    if (type === 'staff' && (!supervisorName || !supervisorTitle)) {
+      res.status(400).json({ error: 'Supervisor name and title are required for staff cohorts.' });
+      return;
+    }
+    const existing = getCohortByProgramSesi(normalized.program, normalized.sesi, type);
     if (existing) {
       res.status(409).json({ error: 'Cohort already exists.', cohort: serializeCohort(existing) });
       return;
     }
 
-    const slug = getCohortSlug(normalized.program, normalized.sesi);
+    const slug = getCohortSlug(normalized.program, normalized.sesi, type);
     const iconFilename = await saveCohortIcon(req.file, slug);
     const accentColor = normalizeColor(req.body?.accentColor);
-    const cohort = createCohort(normalized.program, normalized.sesi, { iconFilename, accentColor });
+    const cohort = createCohort(normalized.program, normalized.sesi, { type, supervisorName, supervisorTitle, iconFilename, accentColor });
     res.status(201).json({ cohort: serializeCohort(cohort, 0) });
   } catch (error) {
     res.status(400).json({ error: error.message || 'Could not create cohort.' });
@@ -1745,18 +2330,30 @@ app.patch('/api/exports/cohorts/:slug', cohortIconUpload.single('icon'), async (
 
   try {
     const normalized = normalizeProgramSesi(req.body?.program, req.body?.sesi);
+    const type = normalizeCohortType(req.body?.type || cohort.type);
+    const supervisorName = String(req.body?.supervisorName || '').trim().toUpperCase();
+    const supervisorTitle = String(req.body?.supervisorTitle || '').trim().toUpperCase();
     if (!normalized.program || !normalized.sesi) {
       res.status(400).json({ error: 'Program and sesi are required.' });
       return;
     }
 
-    const matching = getCohortByProgramSesi(normalized.program, normalized.sesi);
+    const recordCount = Number(db.prepare('SELECT COUNT(*) AS count FROM students WHERE cohort_id = ?').get(cohort.id).count || 0);
+    if (type !== cohort.type && recordCount > 0) {
+      res.status(409).json({ error: 'Cohort type cannot be changed after records have been saved.' });
+      return;
+    }
+    if (type === 'staff' && (!supervisorName || !supervisorTitle)) {
+      res.status(400).json({ error: 'Supervisor name and title are required for staff cohorts.' });
+      return;
+    }
+    const matching = getCohortByProgramSesi(normalized.program, normalized.sesi, type);
     if (matching && Number(matching.id) !== Number(cohort.id)) {
       res.status(409).json({ error: 'Another cohort already uses this Program/Sesi.', cohort: serializeCohort(matching) });
       return;
     }
 
-    const newSlug = getCohortSlug(normalized.program, normalized.sesi);
+    const newSlug = getCohortSlug(normalized.program, normalized.sesi, type);
     const oldSlug = cohort.slug;
     const slugChanged = oldSlug !== newSlug;
     const oldExportDir = path.join(EXPORTS_DIR, oldSlug);
@@ -1779,9 +2376,9 @@ app.patch('/api/exports/cohorts/:slug', cohortIconUpload.single('icon'), async (
     const updateTransaction = db.transaction(() => {
       db.prepare(`
         UPDATE cohorts
-        SET slug = ?, program = ?, sesi = ?, icon_filename = ?, accent_color = ?, updated_at = ?
+        SET slug = ?, program = ?, sesi = ?, type = ?, supervisor_name = ?, supervisor_title = ?, icon_filename = ?, accent_color = ?, updated_at = ?
         WHERE id = ?
-      `).run(newSlug, normalized.program, normalized.sesi, iconFilename || null, accentColor, now, cohort.id);
+      `).run(newSlug, normalized.program, normalized.sesi, type, type === 'staff' ? supervisorName : null, type === 'staff' ? supervisorTitle : null, iconFilename || null, accentColor, now, cohort.id);
 
       db.prepare(`
         UPDATE students
@@ -1799,9 +2396,9 @@ app.patch('/api/exports/cohorts/:slug', cohortIconUpload.single('icon'), async (
     } catch (error) {
       db.prepare(`
         UPDATE cohorts
-        SET slug = ?, program = ?, sesi = ?, icon_filename = ?, accent_color = ?, updated_at = ?
+        SET slug = ?, program = ?, sesi = ?, type = ?, supervisor_name = ?, supervisor_title = ?, icon_filename = ?, accent_color = ?, updated_at = ?
         WHERE id = ?
-      `).run(oldSlug, cohort.program, cohort.sesi, cohort.icon_filename || null, cohort.accent_color || DEFAULT_COHORT_COLOR, new Date().toISOString(), cohort.id);
+      `).run(oldSlug, cohort.program, cohort.sesi, cohort.type, cohort.supervisor_name || null, cohort.supervisor_title || null, cohort.icon_filename || null, cohort.accent_color || DEFAULT_COHORT_COLOR, new Date().toISOString(), cohort.id);
       db.prepare(`
         UPDATE students
         SET program = ?, sesi = ?, updated_at = ?
@@ -1816,7 +2413,10 @@ app.patch('/api/exports/cohorts/:slug', cohortIconUpload.single('icon'), async (
 
     const updated = getCohortBySlug(newSlug);
     const students = getStudentsByCohort(updated);
-    const needsRegeneration = normalized.program !== cohort.program || normalized.sesi !== cohort.sesi;
+    const needsRegeneration = normalized.program !== cohort.program || normalized.sesi !== cohort.sesi
+      || type !== cohort.type || supervisorName !== (cohort.supervisor_name || '')
+      || supervisorTitle !== (cohort.supervisor_title || '');
+    if (needsRegeneration) students.forEach((student) => removeStudentThumbnails(student.ic_number));
     res.json({
       cohort: serializeCohort(updated, students.length),
       oldSlug,
@@ -1826,6 +2426,77 @@ app.patch('/api/exports/cohorts/:slug', cohortIconUpload.single('icon'), async (
   } catch (error) {
     res.status(400).json({ error: error.message || 'Could not update cohort.' });
   }
+});
+
+app.delete('/api/exports/cohorts/:slug', express.json(), (req, res) => {
+  if (req.body?.confirmation !== 'DELETE') {
+    res.status(400).json({ error: 'Type DELETE exactly to confirm cohort deletion.' });
+    return;
+  }
+
+  const cohort = getCohortBySlug(req.params.slug);
+  if (!cohort) {
+    sendCohortNotFound(res);
+    return;
+  }
+
+  const students = getStudentsByCohort(cohort);
+  const quarantineDir = path.join(DATA_DIR, `.delete-cohort-${Date.now()}-${crypto.randomBytes(4).toString('hex')}`);
+  const targets = new Set();
+  const addTarget = (filePath) => { if (filePath) targets.add(filePath); };
+
+  addTarget(resolveInside(EXPORTS_DIR, cohort.slug));
+  addTarget(resolveInside(COHORT_ICONS_DIR, cohort.icon_filename));
+  addTarget(resolveInside(COHORT_TEMPLATES_DIR, cohort.front_template_filename));
+  addTarget(resolveInside(COHORT_TEMPLATES_DIR, cohort.back_template_filename));
+  students.forEach((student) => {
+    addTarget(resolveInside(PHOTOS_DIR, student.photo_filename));
+    addTarget(resolveInside(THUMBNAILS_DIR, getThumbnailFilename(student.ic_number, 'front')));
+    addTarget(resolveInside(THUMBNAILS_DIR, getThumbnailFilename(student.ic_number, 'back')));
+  });
+
+  const staged = [];
+  try {
+    fs.mkdirSync(quarantineDir, { recursive: true });
+    [...targets].forEach((target, index) => {
+      if (!fs.existsSync(target)) return;
+      const stagedPath = path.join(quarantineDir, `${index}-${path.basename(target)}`);
+      fs.renameSync(target, stagedPath);
+      staged.push({ target, stagedPath });
+    });
+
+    db.transaction(() => {
+      db.prepare('DELETE FROM students WHERE cohort_id = ?').run(cohort.id);
+      const result = db.prepare('DELETE FROM cohorts WHERE id = ?').run(cohort.id);
+      if (result.changes !== 1) throw new Error('Cohort changed before it could be deleted.');
+    })();
+  } catch (error) {
+    let rollbackError = null;
+    [...staged].reverse().forEach(({ target, stagedPath }) => {
+      if (!fs.existsSync(stagedPath)) return;
+      try {
+        fs.mkdirSync(path.dirname(target), { recursive: true });
+        fs.renameSync(stagedPath, target);
+      } catch (restoreError) {
+        rollbackError ||= restoreError;
+      }
+    });
+    if (!rollbackError) fs.rmSync(quarantineDir, { recursive: true, force: true });
+    res.status(500).json({
+      error: rollbackError
+        ? 'Could not delete cohort and one or more files could not be restored. Check the server data directory.'
+        : error.message || 'Could not delete cohort.',
+    });
+    return;
+  }
+
+  try {
+    fs.rmSync(quarantineDir, { recursive: true, force: true });
+  } catch (error) {
+    // The cohort is already deleted; stale quarantine data can be removed safely later.
+  }
+
+  res.json({ deleted: true, slug: cohort.slug, recordCount: students.length });
 });
 
 app.post('/api/exports/cohorts/:slug/templates', cohortTemplateUpload.fields([
@@ -1978,6 +2649,7 @@ app.get('/api/exports/count', (req, res) => {
     program: cohort.program,
     sesi: cohort.sesi,
     cohortSlug: cohort.slug,
+    cohortType: cohort.type || 'student',
   });
 });
 
@@ -2074,7 +2746,7 @@ app.post('/api/exports/dataset-restore-summary', restoreUpload.single('backup'),
   }
 
   try {
-    const parsed = await parseDatasetBackup(req.file, cohort.program, cohort.sesi);
+    const parsed = await parseDatasetBackup(req.file, cohort);
     res.json(parsed.summary);
   } catch (error) {
     res.status(400).json({ error: error.message || 'Could not read backup.' });
@@ -2089,8 +2761,8 @@ app.post('/api/exports/dataset-restore', restoreUpload.single('backup'), async (
   }
 
   try {
-    const parsed = await parseDatasetBackup(req.file, cohort.program, cohort.sesi);
-    await restoreCohortBackup(parsed, cohort.program, cohort.sesi);
+    const parsed = await parseDatasetBackup(req.file, cohort);
+    await restoreCohortBackup(parsed, cohort);
     res.json({
       restored: true,
       ...getDatasetSummaryForCohort(cohort),
@@ -2125,7 +2797,7 @@ app.delete('/api/exports/records/:icNumber', (req, res) => {
     return;
   }
 
-  const cohortSlug = getCohortSlug(student.program, student.sesi);
+  const cohortSlug = cohort.slug;
   const cohortExportDir = path.join(EXPORTS_DIR, cohortSlug);
   const photoPath = resolveInside(PHOTOS_DIR, student.photo_filename);
   const frontPath = resolveInside(cohortExportDir, student.front_filename);
@@ -2217,6 +2889,8 @@ app.get('/api/students/:icNumber', (req, res) => {
     icNumber: student.ic_number,
     name: student.name,
     matrixNumber: student.matrix_number,
+    jobTitle: student.job_title || '',
+    staffNumber: student.staff_number || '',
     program: student.program,
     sesi: student.sesi,
     photoUrl: `/api/students/${encodeURIComponent(student.ic_number)}/photo`,
@@ -2373,6 +3047,8 @@ app.post('/api/students', upload.fields([
     const icNumber = String(req.body.icNumber || '').trim();
     const name = String(req.body.name || '').trim().toUpperCase();
     const matrixNumber = String(req.body.matrixNumber || '').trim().toUpperCase();
+    const jobTitle = String(req.body.jobTitle || '').trim().toUpperCase();
+    const staffNumber = String(req.body.staffNumber || '').trim().toUpperCase();
     const program = cohort.program;
     const sesi = cohort.sesi;
 
@@ -2381,13 +3057,18 @@ app.post('/api/students', upload.fields([
       return;
     }
 
-    if (!name || !matrixNumber || !program || !sesi) {
-      res.status(400).json({ error: 'Name, matrix number, program, and sesi are required.' });
+    const isStaff = cohort.type === 'staff';
+    if (!name || !program || !sesi || (isStaff ? !jobTitle : !matrixNumber)) {
+      res.status(400).json({ error: isStaff ? 'Name and job title are required.' : 'Name and matrix number are required.' });
       return;
     }
 
-    if (!VALID_MATRIX_PATTERN.test(matrixNumber)) {
+    if (!isStaff && !VALID_MATRIX_PATTERN.test(matrixNumber)) {
       res.status(400).json({ error: 'Matrix number must use format ABCD 1/1111(11)-1234.' });
+      return;
+    }
+    if (staffNumber.length > 40) {
+      res.status(400).json({ error: 'Staff number must be 40 characters or fewer.' });
       return;
     }
 
@@ -2439,15 +3120,17 @@ app.post('/api/students', upload.fields([
     const now = new Date().toISOString();
     db.prepare(`
       INSERT INTO students (
-        ic_number, cohort_id, name, matrix_number, program, sesi,
+        ic_number, cohort_id, name, matrix_number, job_title, staff_number, program, sesi,
         photo_filename, front_filename, back_filename,
         created_at, updated_at
       )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(ic_number) DO UPDATE SET
         cohort_id = excluded.cohort_id,
         name = excluded.name,
         matrix_number = excluded.matrix_number,
+        job_title = excluded.job_title,
+        staff_number = excluded.staff_number,
         program = excluded.program,
         sesi = excluded.sesi,
         photo_filename = excluded.photo_filename,
@@ -2458,7 +3141,9 @@ app.post('/api/students', upload.fields([
       icNumber,
       cohort.id,
       name,
-      matrixNumber,
+      isStaff ? '' : matrixNumber,
+      isStaff ? jobTitle : null,
+      isStaff ? staffNumber || null : null,
       program,
       sesi,
       photoFilename,
@@ -2501,7 +3186,7 @@ app.get('/api/exports/dataset-backup.zip', (req, res) => {
     return;
   }
 
-  const manifest = getBackupManifest(cohort.program, cohort.sesi);
+  const manifest = getBackupManifest(cohort);
   const cohortExportDir = path.join(EXPORTS_DIR, manifest.cohortSlug);
 
   res.setHeader('Content-Type', 'application/zip');
@@ -2559,7 +3244,9 @@ app.get('/api/exports/dataset-backup.zip', (req, res) => {
 app.use((error, req, res, next) => {
   if (error instanceof multer.MulterError) {
     const message = error.code === 'LIMIT_FILE_SIZE'
-      ? 'Background image must be 20MB or smaller.'
+      ? req.path === '/api/admin/restore'
+        ? `Backup must be ${Math.round(MAX_FULL_RESTORE_SIZE / 1024 / 1024)}MB or smaller.`
+        : 'Uploaded file exceeds the allowed size.'
       : error.message;
     res.status(400).json({ error: message });
     return;

@@ -2,14 +2,12 @@
 
 Browser-based student ID card generator with a Node/SQLite backend for managing cohorts, saving records, photos, generated card images, and cohort exports.
 
-<img width="3780" height="1512" alt="snapshot" src="https://github.com/user-attachments/assets/38e5cc9f-5066-4e90-b464-fe01acbcf808" />
-
-
 ## Features
 
 - Public cohort home page lists available cohorts in a grid.
 - Global Match Card mini game with timer and ranking.
 - Admin-protected Add/Edit Cohort flow creates cohorts from Program + Sesi and updates the grid photo and card gradient color.
+- Cohorts can be typed as Students or Staff. Staff cohorts store default supervisor details and generate staff cards with job title and optional staff number.
 - Each cohort has its own generator, grid preview, exports page, response setting, ZIP export, backup, restore, and regeneration tools.
 - Generate front/back student ID JPGs from `front.jpg` and `back.jpg`.
 - IC number lookup using format `######-##-####`.
@@ -39,19 +37,13 @@ Open:
 - Generator: `http://localhost:3000/cohorts/{cohort_slug}`
 - Grid Preview: `http://localhost:3000/cohorts/{cohort_slug}/grid`
 - Exports: `http://localhost:3000/cohorts/{cohort_slug}/exports`
+- Admin settings and full backup/restore: `http://localhost:3000/admin/app-settings`
 
-The Add Cohort flow, Exports page, and export APIs use HTTP Basic Auth.
-
-Default credentials:
-
-- Username: `admin`
-- Password: your default password
-
-Change them with:
+The Add Cohort flow, Exports page, and export APIs use HTTP Basic Auth. Set credentials through the deployment environment before starting the application; do not commit real values:
 
 ```bash
-EXPORTS_USERNAME=admin
-EXPORTS_PASSWORD=your-secure-password
+EXPORTS_USERNAME=<admin-username>
+EXPORTS_PASSWORD=<strong-unique-password>
 ```
 
 ## Save Workflow
@@ -72,15 +64,20 @@ Existing IC numbers are updated. Saved filenames remove IC hyphens:
 
 ## Cohorts
 
-The app stores cohorts in SQLite with a generated slug based on Program + Sesi. On startup, the default cohort is created automatically:
-
-```text
-DIPLOMA KEJURURAWATAN / SESI JANUARI 2026 - DISEMBER 2028
-```
+The app stores cohorts in SQLite with a generated slug based on Program + Sesi. On startup, a default cohort is created automatically from the application defaults.
 
 Existing records are migrated into matching cohorts by Program/Sesi. The old `/grid` and `/exports` routes redirect to the default cohort routes.
 
-Use the pencil button on a cohort card to edit its Program, Sesi, grid photo, or card gradient color. Cohort photos are compressed before upload. When Program/Sesi changes, saved student rows are updated, but existing card JPGs are not regenerated automatically. The edit modal shows an amber reminder to run `Regenerate Cards` from the cohort Exports page so back-card text stays consistent.
+Cohorts have one of two types:
+
+- **Students** use name, IC number, matrix number, program, and sesi.
+- **Staff** use name, IC number, job title, optional staff number, and cohort-level supervisor name/title.
+
+Program + Sesi + Type identifies a cohort, so student and staff cohorts may share the same Program/Sesi. Existing cohorts are treated as student cohorts. A cohort type can only be changed while it has no saved records.
+
+Staff cards use `assets/staff-front.jpg` and `assets/staff-back.jpg` by default. The front shows the photo and name in the blue panel, with IC number and job title in black in the lower white panel. The optional staff number appears at the top. The back shows the staff cohort's default supervisor name and title. Custom cohort templates continue to override the defaults.
+
+Use the pencil button on a cohort card to edit its Program, Sesi, grid photo, or card gradient color. Cohort photos are compressed before upload. When Program/Sesi changes, saved student rows are updated, but existing card JPGs are not regenerated automatically. The edit modal shows an amber reminder to run `Regenerate Cards` from the cohort Exports page so back-card text stays consistent. Its danger zone can permanently delete the cohort and all associated records and managed files after typing `DELETE` exactly.
 
 ## Match Card Game
 
@@ -129,6 +126,21 @@ Backup downloads a ZIP containing:
 
 Restore validates the uploaded ZIP before changing data. It rejects wrong Program/Sesi backups, invalid student rows, unsafe ZIP paths, missing files, and IC numbers that already belong to another Program/Sesi. Confirmed restore replaces only the selected cohort; other cohorts are left unchanged.
 
+## Full Backup / Restore
+
+The protected App Settings page at `/admin/app-settings` provides a normal full backup and restore workflow. `Backup Everything` downloads one ZIP containing a consistent `app.sqlite` snapshot plus all photos, generated cards, thumbnails, cohort icons/templates, and custom app images.
+
+Choose that ZIP and click `Restore Everything` to replace the database and every managed data folder. The server checks the backup format, safe paths, supported schema, and required SQLite tables, stages the contents, then restores them while temporarily blocking writes. No persistent rollback copy is retained.
+
+Full backup/restore endpoints are protected by the same HTTP Basic Auth as Exports:
+
+```text
+GET  /api/admin/backup.zip
+POST /api/admin/restore
+```
+
+Optional restore limits can be configured with `MAX_FULL_RESTORE_SIZE`, `MAX_FULL_UNCOMPRESSED_SIZE`, and `MAX_FULL_BACKUP_ENTRIES`.
+
 ## Regenerating Cards
 
 The Exports page can regenerate generated front/back JPGs from saved SQLite records, saved cropped photos, the cohort's custom backgrounds or default `front.jpg` / `back.jpg`, and the bundled Liberation Sans Bold font.
@@ -174,32 +186,18 @@ When responses are closed:
 
 ## Docker / Traefik
 
-`docker-compose.yml` is prepared for your Traefik VPS stack.
-
-It builds from:
-
-```text
-https://github.com/alexmarcel/ilkkm-id-maker.git#main
-```
-
-Default Traefik host:
-
-```text
-id.YOURHOST.com
-```
-
-Add the service from `docker-compose.yml` into your existing Traefik compose file and add this volume:
+Build and run the included Compose service from a local checkout. Configure the router hostname for your own deployment and retain the persistent volume:
 
 ```yaml
 volumes:
   ilkkm_id_maker_data:
 ```
 
-Set exports credentials in your VPS `.env`:
+Set credentials in an untracked deployment `.env` or secret manager:
 
 ```bash
-ID_MAKER_EXPORTS_USERNAME=admin
-ID_MAKER_EXPORTS_PASSWORD=your-secure-password
+ID_MAKER_EXPORTS_USERNAME=<admin-username>
+ID_MAKER_EXPORTS_PASSWORD=<strong-unique-password>
 ```
 
 Persistent app data is mounted at `/data` inside the container.
@@ -214,6 +212,7 @@ Persistent app data is mounted at `/data` inside the container.
 - `grid.html` / `grid.js` - Cohort grid preview UI.
 - `styles.css` - Shared responsive UI styles.
 - `front.jpg` / `back.jpg` - Blank card templates.
+- `assets/staff-front.jpg` / `assets/staff-back.jpg` - Default staff card templates.
 - `icon.jpg` - Header icon.
 - `Dockerfile` / `docker-compose.yml` - Container deployment.
 

@@ -71,6 +71,66 @@
           </button>
         </form>
       </section>
+
+      <section class="exports-shell" aria-label="Backup and restore">
+        <div class="control-panel admin-settings-panel backup-panel">
+          <div class="heading backup-heading">
+            <h5 class="eyebrow">
+              <i data-lucide="database-backup" aria-hidden="true"></i>
+              <span>BACKUP &amp; RESTORE</span>
+            </h5>
+            <p>Move or recover the complete application data in one ZIP file.</p>
+          </div>
+
+          <div class="backup-task-grid">
+            <article class="backup-task backup-download-task">
+              <div class="backup-task-icon" aria-hidden="true"><i data-lucide="archive"></i></div>
+              <div class="backup-task-copy">
+                <span class="backup-step">1 · BACK UP</span>
+                <h2>Create a complete backup</h2>
+                <p>Download the database and every managed image, card, template, icon, and thumbnail.</p>
+              </div>
+              <a class="primary-action" id="downloadFullBackup" href="/api/admin/backup.zip">
+                <i data-lucide="download" aria-hidden="true"></i>
+                <span>Backup Everything</span>
+              </a>
+            </article>
+
+            <article class="backup-task backup-restore-task">
+              <div class="backup-task-icon danger" aria-hidden="true"><i data-lucide="rotate-ccw"></i></div>
+              <div class="backup-task-copy">
+                <span class="backup-step danger">2 · RESTORE</span>
+                <h2>Restore from a backup</h2>
+                <p>Choose a full backup ZIP created by this application.</p>
+              </div>
+              <label class="backup-dropzone" id="fullRestoreDropzone" for="fullRestoreInput" tabindex="0">
+                <i data-lucide="file-archive" aria-hidden="true"></i>
+                <span class="backup-dropzone-copy">
+                  <strong id="fullRestoreFileName">Choose a backup ZIP</strong>
+                  <small id="fullRestoreFileMeta">Drag and drop here, or click to browse</small>
+                </span>
+                <span class="backup-browse">Browse</span>
+              </label>
+              <input id="fullRestoreInput" class="visually-hidden" type="file" accept=".zip,application/zip,application/x-zip-compressed">
+
+              <div class="restore-impact">
+                <i data-lucide="triangle-alert" aria-hidden="true"></i>
+                <p><strong>This replaces current data.</strong> Cohorts, records, rankings, photos, generated cards, thumbnails, templates, icons, and custom app images will be overwritten.</p>
+              </div>
+
+              <button class="primary-action danger-action restore-action" id="restoreFullBackup" type="button" disabled>
+                <i data-lucide="database-zap" aria-hidden="true"></i>
+                <span>Restore Everything</span>
+              </button>
+            </article>
+          </div>
+
+          <p class="save-status" id="fullBackupStatus" role="status">
+            <i data-lucide="info" aria-hidden="true"></i>
+            <span>Ready. Creating a backup does not interrupt the application.</span>
+          </p>
+        </div>
+      </section>
     </main>
 
     <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>

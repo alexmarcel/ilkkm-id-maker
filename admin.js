@@ -10,6 +10,13 @@ const elements = {
   matchGameEnabled: document.querySelector('#matchGameEnabled'),
   status: document.querySelector('#appSettingsStatus'),
   save: document.querySelector('#saveAppSettings'),
+  fullRestoreInput: document.querySelector('#fullRestoreInput'),
+  fullRestoreFileName: document.querySelector('#fullRestoreFileName'),
+  fullRestoreFileMeta: document.querySelector('#fullRestoreFileMeta'),
+  fullRestoreDropzone: document.querySelector('#fullRestoreDropzone'),
+  downloadFullBackup: document.querySelector('#downloadFullBackup'),
+  restoreFull: document.querySelector('#restoreFullBackup'),
+  fullBackupStatus: document.querySelector('#fullBackupStatus'),
 };
 
 function refreshIcons() {
@@ -28,6 +35,71 @@ function setStatus(message, type = '') {
   }
   icon?.setAttribute('data-lucide', type === 'error' ? 'circle-alert' : type === 'ready' ? 'circle-check' : 'info');
   refreshIcons();
+}
+
+function setFullBackupStatus(message, type = '') {
+  const text = elements.fullBackupStatus.querySelector('span');
+  const icon = elements.fullBackupStatus.querySelector('i, svg');
+  text.textContent = message;
+  elements.fullBackupStatus.classList.remove('error', 'ready', 'loading');
+  if (type) elements.fullBackupStatus.classList.add(type);
+  icon?.setAttribute('data-lucide', type === 'error' ? 'circle-alert' : type === 'ready' ? 'circle-check' : 'info');
+  refreshIcons();
+}
+
+function setFullRestoreBusy(busy, label = '') {
+  elements.fullRestoreInput.disabled = busy;
+  elements.restoreFull.disabled = busy || !elements.fullRestoreInput.files?.[0];
+  elements.restoreFull.classList.toggle('loading', busy);
+  elements.restoreFull.querySelector('i, svg')?.setAttribute('data-lucide', busy ? 'loader-circle' : 'database-zap');
+  elements.restoreFull.querySelector('span').textContent = busy ? 'Restoring Everything...' : 'Restore Everything';
+  elements.fullRestoreDropzone.setAttribute('aria-disabled', busy ? 'true' : 'false');
+  if (label) setFullBackupStatus(label, 'loading');
+  refreshIcons();
+}
+
+function formatFileSize(bytes) {
+  if (!Number.isFinite(bytes) || bytes <= 0) return '0 KB';
+  const units = ['B', 'KB', 'MB', 'GB'];
+  const index = Math.min(Math.floor(Math.log(bytes) / Math.log(1024)), units.length - 1);
+  const value = bytes / (1024 ** index);
+  return `${value.toFixed(index > 1 ? 1 : 0)} ${units[index]}`;
+}
+
+function showRestoreFile(file) {
+  const isZip = file && (file.name.toLowerCase().endsWith('.zip') || ['application/zip', 'application/x-zip-compressed'].includes(file.type));
+  if (file && !isZip) {
+    elements.fullRestoreInput.value = '';
+    elements.fullRestoreFileName.textContent = 'Choose a backup ZIP';
+    elements.fullRestoreFileMeta.textContent = 'Drag and drop here, or click to browse';
+    elements.fullRestoreDropzone.classList.remove('has-file');
+    elements.restoreFull.disabled = true;
+    setFullBackupStatus('Please choose a ZIP backup created by this application.', 'error');
+    return;
+  }
+  elements.fullRestoreFileName.textContent = file ? file.name : 'Choose a backup ZIP';
+  elements.fullRestoreFileMeta.textContent = file ? `${formatFileSize(file.size)} · Ready to restore` : 'Drag and drop here, or click to browse';
+  elements.fullRestoreDropzone.classList.toggle('has-file', Boolean(file));
+  elements.restoreFull.disabled = !file;
+  setFullBackupStatus(file ? 'Backup selected. Restore Everything will immediately replace the current data.' : 'Ready. Creating a backup does not interrupt the application.');
+}
+
+async function restoreFullBackup() {
+  const file = elements.fullRestoreInput.files?.[0] || null;
+  if (!file) return;
+  setFullRestoreBusy(true, 'Uploading backup and restoring everything...');
+  try {
+    const payload = new FormData();
+    payload.set('backup', file, file.name);
+    const response = await fetch('/api/admin/restore', { method: 'POST', body: payload });
+    const result = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(result.error || 'Could not restore backup.');
+    setFullBackupStatus('Restore completed. Redirecting to cohorts...', 'ready');
+    window.setTimeout(() => { window.location.href = '/'; }, 1200);
+  } catch (error) {
+    setFullBackupStatus(error.message || 'Could not restore backup.', 'error');
+    setFullRestoreBusy(false);
+  }
 }
 
 function setSaving(isSaving) {
@@ -172,4 +244,34 @@ document.querySelector('label[for="matchCardBackgroundInput"]').addEventListener
     event.preventDefault();
     elements.matchCardBackground.click();
   }
+});
+
+elements.fullRestoreInput.addEventListener('change', () => showRestoreFile(elements.fullRestoreInput.files?.[0] || null));
+elements.restoreFull.addEventListener('click', restoreFullBackup);
+elements.downloadFullBackup.addEventListener('click', () => {
+  setFullBackupStatus('Creating your complete backup. The download will begin shortly.', 'loading');
+  window.setTimeout(() => setFullBackupStatus('Backup download started.', 'ready'), 1200);
+});
+elements.fullRestoreDropzone.addEventListener('keydown', (event) => {
+  if (event.key === 'Enter' || event.key === ' ') {
+    event.preventDefault();
+    elements.fullRestoreInput.click();
+  }
+});
+['dragenter', 'dragover'].forEach((eventName) => elements.fullRestoreDropzone.addEventListener(eventName, (event) => {
+  event.preventDefault();
+  if (!elements.fullRestoreInput.disabled) elements.fullRestoreDropzone.classList.add('dragging');
+}));
+['dragleave', 'drop'].forEach((eventName) => elements.fullRestoreDropzone.addEventListener(eventName, (event) => {
+  event.preventDefault();
+  elements.fullRestoreDropzone.classList.remove('dragging');
+}));
+elements.fullRestoreDropzone.addEventListener('drop', (event) => {
+  if (elements.fullRestoreInput.disabled) return;
+  const file = event.dataTransfer?.files?.[0] || null;
+  if (!file) return;
+  const transfer = new DataTransfer();
+  transfer.items.add(file);
+  elements.fullRestoreInput.files = transfer.files;
+  showRestoreFile(file);
 });

@@ -57,7 +57,17 @@
             <input id="nameInput" name="name" type="text" autocomplete="name" required>
           </label>
 
-          <label class="field">
+          <label class="field" id="jobTitleField" hidden>
+            <span>Job Title</span>
+            <input id="jobTitleInput" name="jobTitle" type="text" maxlength="120">
+          </label>
+
+          <label class="field" id="staffNumberField" hidden>
+            <span>Staff Number <small>(optional)</small></span>
+            <input id="staffNumberInput" name="staffNumber" type="text" maxlength="40">
+          </label>
+
+          <label class="field" id="matrixField">
             <span>Matrix Number</span>
             <input
               id="matrixInput"
@@ -69,12 +79,12 @@
             >
           </label>
 
-          <label class="field">
+          <label class="field" id="programField">
             <span>Program</span>
             <input id="programInput" type="text" value="DIPLOMA KEJURURAWATAN" disabled>
           </label>
 
-          <label class="field">
+          <label class="field" id="sesiField">
             <span>Sesi</span>
             <input id="sesiInput" type="text" value="SESI JANUARI 2026 - DISEMBER 2028" disabled>
           </label>
@@ -139,7 +149,7 @@
               <tr>
                 <th scope="col"></th>
                 <th scope="col">Name</th>
-                <th scope="col">Matrix Number</th>
+                <th scope="col" id="recordDetailHeader">Matrix Number</th>
                 <th scope="col">Saved</th>
               </tr>
             </thead>

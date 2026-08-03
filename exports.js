@@ -31,6 +31,8 @@ const elements = {
   cancelDatasetAction: document.querySelector('#cancelDatasetAction'),
   confirmDatasetAction: document.querySelector('#confirmDatasetAction'),
   generatorLink: document.querySelector('#exportsGeneratorLink'),
+  detailHeader: document.querySelector('#exportDetailHeader'),
+  jobTitleHeader: document.querySelector('#exportJobTitleHeader'),
 };
 
 let countTimer = null;
@@ -61,6 +63,9 @@ async function loadCohort() {
   elements.program.disabled = true;
   elements.sesi.disabled = true;
   elements.generatorLink.href = `/cohorts/${encodeURIComponent(result.slug)}`;
+  const isStaff = result.type === 'staff';
+  elements.detailHeader.textContent = isStaff ? 'Staff Number' : 'Matrix Number';
+  elements.jobTitleHeader.hidden = !isStaff;
   renderTemplateSettings();
 }
 
@@ -122,7 +127,7 @@ function renderTableMessage(message) {
   elements.recordsTableBody.innerHTML = '';
   const row = document.createElement('tr');
   const cell = document.createElement('td');
-  cell.colSpan = 5;
+  cell.colSpan = currentCohort?.type === 'staff' ? 6 : 5;
   cell.textContent = message;
   row.append(cell);
   elements.recordsTableBody.append(row);
@@ -143,6 +148,7 @@ function renderRecords(records) {
     const nameCell = document.createElement('td');
     const matrixCell = document.createElement('td');
     const icCell = document.createElement('td');
+    const jobTitleCell = document.createElement('td');
     const actionCell = document.createElement('td');
     const frontButton = document.createElement('button');
     const backButton = document.createElement('button');
@@ -152,7 +158,8 @@ function renderRecords(records) {
 
     numberCell.textContent = record.number;
     nameCell.textContent = record.name;
-    matrixCell.textContent = record.matrixNumber;
+    matrixCell.textContent = currentCohort?.type === 'staff' ? (record.staffNumber || '—') : record.matrixNumber;
+    jobTitleCell.textContent = record.jobTitle || '';
     icCell.textContent = record.icNumber;
     actionCell.className = 'record-actions';
 
@@ -196,7 +203,11 @@ function renderRecords(records) {
     deleteButton.innerHTML = '<i data-lucide="trash-2" aria-hidden="true"></i>';
     actionCell.append(frontButton, backButton, photoButton, regenerateButton, deleteButton);
 
-    row.append(numberCell, nameCell, matrixCell, icCell, actionCell);
+    if (currentCohort?.type === 'staff') {
+      row.append(numberCell, nameCell, matrixCell, jobTitleCell, icCell, actionCell);
+    } else {
+      row.append(numberCell, nameCell, matrixCell, icCell, actionCell);
+    }
     elements.recordsTableBody.append(row);
   });
 
@@ -243,7 +254,7 @@ function getTemplateState(side) {
       input: elements.frontTemplateInput,
       url: currentCohort?.frontTemplateUrl || '',
       filename: currentCohort?.frontTemplateFilename || '',
-      defaultName: 'front.jpg',
+      defaultName: currentCohort?.type === 'staff' ? 'staff-front.jpg' : 'front.jpg',
     };
   }
 
@@ -252,7 +263,7 @@ function getTemplateState(side) {
     input: elements.backTemplateInput,
     url: currentCohort?.backTemplateUrl || '',
     filename: currentCohort?.backTemplateFilename || '',
-    defaultName: 'back.jpg',
+    defaultName: currentCohort?.type === 'staff' ? 'staff-back.jpg' : 'back.jpg',
   };
 }
 

@@ -8,6 +8,10 @@ const elements = {
   cancel: document.querySelector('#cancelCohort'),
   program: document.querySelector('#newCohortProgram'),
   sesi: document.querySelector('#newCohortSesi'),
+  type: document.querySelector('#newCohortType'),
+  supervisorFields: document.querySelector('#staffSupervisorFields'),
+  supervisorName: document.querySelector('#newCohortSupervisorName'),
+  supervisorTitle: document.querySelector('#newCohortSupervisorTitle'),
   icon: document.querySelector('#newCohortIcon'),
   iconButtonText: document.querySelector('#cohortIconButtonText'),
   removeIcon: document.querySelector('#removeCohortIcon'),
@@ -15,6 +19,13 @@ const elements = {
   modalStatus: document.querySelector('#cohortModalStatus'),
   saveCohort: document.querySelector('#saveCohort'),
   modalTitle: document.querySelector('#cohortModalTitle'),
+  dangerZone: document.querySelector('#cohortDangerZone'),
+  deleteSummary: document.querySelector('#cohortDeleteSummary'),
+  showDelete: document.querySelector('#showDeleteCohort'),
+  deleteConfirmation: document.querySelector('#cohortDeleteConfirmation'),
+  deletePhrase: document.querySelector('#cohortDeletePhrase'),
+  cancelDelete: document.querySelector('#cancelDeleteCohort'),
+  confirmDelete: document.querySelector('#confirmDeleteCohort'),
 };
 
 let currentCohorts = [];
@@ -22,6 +33,7 @@ let modalMode = 'create';
 let editingCohort = null;
 let removeIconRequested = false;
 let compressedIconFile = null;
+let deleteInProgress = false;
 
 const ICON_OUTPUT_SIZE = 720;
 const ICON_QUALITY = 0.82;
@@ -64,16 +76,27 @@ function hasProgramSesiChanges() {
   }
 
   return normalizeCohortText(elements.program.value) !== normalizeCohortText(editingCohort.program)
-    || normalizeCohortText(elements.sesi.value) !== normalizeCohortText(editingCohort.sesi);
+    || normalizeCohortText(elements.sesi.value) !== normalizeCohortText(editingCohort.sesi)
+    || elements.type.value !== editingCohort.type
+    || normalizeCohortText(elements.supervisorName.value) !== normalizeCohortText(editingCohort.supervisorName)
+    || normalizeCohortText(elements.supervisorTitle.value) !== normalizeCohortText(editingCohort.supervisorTitle);
 }
 
 function refreshCohortChangeWarning() {
   if (hasProgramSesiChanges()) {
-    setModalStatus('Program or Sesi changed. Run Regenerate Cards from Exports after saving.', 'warning');
+    setModalStatus('Card details changed. Run Regenerate Cards from Exports after saving.', 'warning');
     return;
   }
 
   setModalStatus(modalMode === 'edit' ? 'Update Program, Sesi, or replace the grid photo.' : 'Use the exports/admin login when prompted.');
+}
+
+function refreshCohortTypeFields() {
+  const isStaff = elements.type.value === 'staff';
+  elements.supervisorFields.hidden = !isStaff;
+  elements.supervisorName.required = isStaff;
+  elements.supervisorTitle.required = isStaff;
+  elements.type.disabled = modalMode === 'edit' && Number(editingCohort?.recordCount || 0) > 0;
 }
 
 function loadImageFromFile(file) {
@@ -187,6 +210,7 @@ function renderCohorts(cohorts) {
     const sesi = document.createElement('span');
     const meta = document.createElement('span');
     const status = document.createElement('span');
+    const typeBadge = document.createElement('span');
 
     card.className = 'cohort-card-wrap';
     link.className = 'cohort-card';
@@ -205,9 +229,11 @@ function renderCohorts(cohorts) {
     sesi.textContent = cohort.sesi;
     meta.textContent = `${cohort.recordCount || 0} saved record${Number(cohort.recordCount || 0) === 1 ? '' : 's'}`;
     meta.className = 'cohort-card-meta';
+    typeBadge.className = 'cohort-type-badge';
+    typeBadge.textContent = cohort.type === 'staff' ? 'Staff' : 'Students';
     status.className = cohort.acceptingResponse ? 'cohort-status closed' : 'cohort-status open';
     status.textContent = cohort.acceptingResponse ? 'Closed' : 'Open';
-    copy.append(title, sesi, meta);
+    copy.append(title, sesi, typeBadge, meta);
     footer.append(copy);
     link.append(media, footer);
     card.append(link, status, editLink);
@@ -247,24 +273,96 @@ function openModal(mode = 'create', cohort = null) {
   elements.modalTitle.textContent = mode === 'edit' ? 'EDIT COHORT' : 'ADD COHORT';
   elements.program.value = cohort?.program || '';
   elements.sesi.value = cohort?.sesi || '';
+  elements.type.value = cohort?.type || 'student';
+  elements.supervisorName.value = cohort?.supervisorName || '';
+  elements.supervisorTitle.value = cohort?.supervisorTitle || '';
   elements.color.value = cohort?.accentColor || '#0f8ea3';
   elements.iconButtonText.textContent = mode === 'edit' ? 'Replace Photo' : 'Add Photo';
   elements.removeIcon.hidden = !(mode === 'edit' && cohort?.iconUrl);
   elements.removeIcon.disabled = false;
   elements.saveCohort.querySelector('span').textContent = mode === 'edit' ? 'Save Changes' : 'Create Cohort';
+  elements.dangerZone.hidden = mode !== 'edit';
+  elements.deleteConfirmation.hidden = true;
+  elements.showDelete.hidden = false;
+  elements.deletePhrase.value = '';
+  elements.confirmDelete.disabled = true;
+  elements.deleteSummary.textContent = mode === 'edit'
+    ? `${cohort.program} · ${cohort.type === 'staff' ? 'Staff' : 'Students'} · ${Number(cohort.recordCount || 0)} saved record${Number(cohort.recordCount || 0) === 1 ? '' : 's'}`
+    : '';
   setModalStatus(mode === 'edit' ? 'Update Program, Sesi, or replace the grid photo.' : 'Use the exports/admin login when prompted.');
   elements.modal.hidden = false;
+  refreshCohortTypeFields();
   document.body.classList.add('modal-open');
   elements.program.focus();
 }
 
 function closeModal() {
+  if (deleteInProgress) return;
   elements.modal.hidden = true;
   document.body.classList.remove('modal-open');
   if (window.location.pathname === '/admin/cohorts/new') {
     window.history.replaceState({}, '', '/');
   } else if (window.location.pathname.startsWith('/admin/cohorts/')) {
     window.history.replaceState({}, '', '/');
+  }
+}
+
+function setDeleting(isDeleting) {
+  deleteInProgress = isDeleting;
+  [...elements.form.elements].forEach((control) => { control.disabled = isDeleting; });
+  elements.closeModal.disabled = isDeleting;
+  elements.confirmDelete.classList.toggle('loading', isDeleting);
+  elements.confirmDelete.querySelector('i, svg')?.setAttribute('data-lucide', isDeleting ? 'loader-circle' : 'trash-2');
+  elements.confirmDelete.querySelector('span').textContent = isDeleting ? 'Deleting Cohort...' : 'Delete Permanently';
+  if (!isDeleting) {
+    elements.cancel.disabled = false;
+    elements.saveCohort.disabled = false;
+    elements.showDelete.disabled = false;
+    elements.cancelDelete.disabled = false;
+    elements.deletePhrase.disabled = false;
+    elements.confirmDelete.disabled = elements.deletePhrase.value !== 'DELETE';
+    refreshCohortTypeFields();
+  }
+  refreshIcons();
+}
+
+function showDeleteConfirmation() {
+  elements.deleteConfirmation.hidden = false;
+  elements.showDelete.hidden = true;
+  elements.deletePhrase.value = '';
+  elements.confirmDelete.disabled = true;
+  setModalStatus('Deletion cannot be undone. Type DELETE exactly to continue.', 'warning');
+  elements.deletePhrase.focus();
+}
+
+function hideDeleteConfirmation() {
+  elements.deleteConfirmation.hidden = true;
+  elements.showDelete.hidden = false;
+  elements.deletePhrase.value = '';
+  elements.confirmDelete.disabled = true;
+  refreshCohortChangeWarning();
+}
+
+async function deleteCohort() {
+  if (modalMode !== 'edit' || !editingCohort || elements.deletePhrase.value !== 'DELETE') return;
+  setDeleting(true);
+  setModalStatus('Deleting cohort and all associated data...', 'loading');
+  try {
+    const response = await fetch(`/api/exports/cohorts/${encodeURIComponent(editingCohort.slug)}`, {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ confirmation: 'DELETE' }),
+    });
+    const result = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(result.error || 'Could not delete cohort.');
+    const deletedProgram = editingCohort.program;
+    setDeleting(false);
+    closeModal();
+    await loadCohorts();
+    setStatus(`${deletedProgram} was deleted with ${Number(result.recordCount || 0)} saved record${Number(result.recordCount || 0) === 1 ? '' : 's'}.`, 'ready');
+  } catch (error) {
+    setDeleting(false);
+    setModalStatus(error.message || 'Could not delete cohort.', 'error');
   }
 }
 
@@ -287,8 +385,15 @@ async function saveCohort(event) {
   const sesi = elements.sesi.value.trim();
   const icon = compressedIconFile || elements.icon.files?.[0] || null;
   const accentColor = elements.color.value || '#0f8ea3';
+  const type = elements.type.value;
+  const supervisorName = elements.supervisorName.value.trim();
+  const supervisorTitle = elements.supervisorTitle.value.trim();
   if (!program || !sesi) {
     setModalStatus('Program and sesi are required.', 'error');
+    return;
+  }
+  if (type === 'staff' && (!supervisorName || !supervisorTitle)) {
+    setModalStatus('Supervisor name and title are required for staff cohorts.', 'error');
     return;
   }
 
@@ -304,6 +409,9 @@ async function saveCohort(event) {
     const payload = new FormData();
     payload.set('program', program);
     payload.set('sesi', sesi);
+    payload.set('type', type);
+    payload.set('supervisorName', supervisorName);
+    payload.set('supervisorTitle', supervisorTitle);
     payload.set('accentColor', accentColor);
     if (modalMode === 'edit' && removeIconRequested) {
       payload.set('removeIcon', 'true');
@@ -348,8 +456,25 @@ elements.addCohort.addEventListener('click', () => {
 elements.closeModal.addEventListener('click', closeModal);
 elements.cancel.addEventListener('click', closeModal);
 elements.form.addEventListener('submit', saveCohort);
+elements.showDelete.addEventListener('click', showDeleteConfirmation);
+elements.cancelDelete.addEventListener('click', hideDeleteConfirmation);
+elements.deletePhrase.addEventListener('input', () => {
+  elements.confirmDelete.disabled = elements.deletePhrase.value !== 'DELETE';
+});
+elements.deletePhrase.addEventListener('keydown', (event) => {
+  if (event.key !== 'Enter') return;
+  event.preventDefault();
+  if (!elements.confirmDelete.disabled) deleteCohort();
+});
+elements.confirmDelete.addEventListener('click', deleteCohort);
 elements.program.addEventListener('input', refreshCohortChangeWarning);
 elements.sesi.addEventListener('input', refreshCohortChangeWarning);
+elements.type.addEventListener('change', () => {
+  refreshCohortTypeFields();
+  refreshCohortChangeWarning();
+});
+elements.supervisorName.addEventListener('input', refreshCohortChangeWarning);
+elements.supervisorTitle.addEventListener('input', refreshCohortChangeWarning);
 elements.icon.addEventListener('change', async () => {
   const file = elements.icon.files?.[0] || null;
   compressedIconFile = null;
