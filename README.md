@@ -35,11 +35,11 @@ Open:
 - Cohorts: `http://localhost:3000/`
 - Match Game: `http://localhost:3000/game`
 - Generator: `http://localhost:3000/cohorts/{cohort_slug}`
-- Grid Preview: `http://localhost:3000/cohorts/{cohort_slug}/grid`
+- Grid Preview (protected): `http://localhost:3000/cohorts/{cohort_slug}/grid`
 - Exports: `http://localhost:3000/cohorts/{cohort_slug}/exports`
 - Admin settings and full backup/restore: `http://localhost:3000/admin/app-settings`
 
-The Add Cohort flow, Exports page, and export APIs use HTTP Basic Auth. Set credentials through the deployment environment before starting the application; do not commit real values:
+The Add Cohort flow, Grid Preview pages, Exports page, and export APIs use HTTP Basic Auth. Set credentials through the deployment environment before starting the application; do not commit real values:
 
 ```bash
 EXPORTS_USERNAME=<admin-username>
@@ -156,7 +156,7 @@ Changing a cohort card background does not regenerate existing saved cards autom
 
 ## Grid Preview
 
-The Grid Preview page displays saved cards for the current Program/Sesi in a visual grid.
+The Grid Preview page displays saved cards for the current Program/Sesi in a visual grid and requires the same HTTP Basic Auth credentials as Admin and Exports. The public Saved Records list, Match Game, and their existing record/thumbnail APIs remain public.
 
 - Desktop uses 5 columns.
 - Mobile uses 3 columns.

@@ -1944,10 +1944,12 @@ function streamCardsZip(req, res) {
   archive.finalize();
 }
 
-app.get('/api/exports/cards.zip', streamCardsZip);
+app.get('/api/exports/cards.zip', requireExportsPassword, streamCardsZip);
 
 app.use(['/exports', '/exports.html', '/api/exports'], requireExportsPassword);
 app.use(/^\/cohorts\/[^/]+\/exports\/?$/, requireExportsPassword);
+app.use(/^\/cohorts\/[^/]+\/grid\/?$/, requireExportsPassword);
+app.use(['/grid', '/grid.html'], requireExportsPassword);
 app.use('/admin/cohorts/new', requireExportsPassword);
 app.use(/^\/admin\/cohorts\/[^/]+\/edit\/?$/, requireExportsPassword);
 app.use('/admin/app-settings', requireExportsPassword);

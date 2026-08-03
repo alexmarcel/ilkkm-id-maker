@@ -8,6 +8,7 @@ const server = fs.readFileSync(path.join(root, 'server.js'), 'utf8');
 const generator = fs.readFileSync(path.join(root, 'generator.html'), 'utf8');
 const home = fs.readFileSync(path.join(root, 'home.js'), 'utf8');
 const index = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
+const generatorMarkup = fs.readFileSync(path.join(root, 'generator.html'), 'utf8');
 
 test('staff cohort schema and validation are present', () => {
   assert.match(server, /UNIQUE\(program, sesi, type\)/);
@@ -44,4 +45,13 @@ test('cohort deletion requires typed confirmation and cleans associated data', (
   assert.match(index, /id="cohortDangerZone"/);
   assert.match(index, /id="cohortDeletePhrase"/);
   assert.match(home, /elements\.deletePhrase\.value !== 'DELETE'/);
+});
+
+test('grid preview pages use existing Basic Auth without protecting public data APIs', () => {
+  assert.match(server, /app\.use\(\/\^\\\/cohorts\\\/\[\^\/\]\+\\\/grid/);
+  assert.match(server, /app\.use\(\['\/grid', '\/grid\.html'\], requireExportsPassword\)/);
+  assert.match(server, /app\.get\('\/api\/students\/records\/cohort'/);
+  assert.match(server, /app\.get\('\/api\/students\/:icNumber\/card\/:side\/thumbnail'/);
+  assert.match(server, /app\.get\('\/api\/exports\/cards\.zip', requireExportsPassword, streamCardsZip\)/);
+  assert.match(generatorMarkup, /Grid Preview · Protected/);
 });

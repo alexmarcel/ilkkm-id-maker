@@ -21,9 +21,12 @@ pnpm-debug.log*
 /.server.*
 
 # Temporary backup, restore, and integration artifacts
+/.restore-*
 /.mega-*
 /.full-*
 /.delete-*
+/*-integration-data/
+/*-test-data/
 *.tmp
 *.temp
 
