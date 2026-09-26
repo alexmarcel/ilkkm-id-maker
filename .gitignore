@@ -6,11 +6,24 @@
 /data/
 /ilkkm_backup/
 /ilkkm_files/
+/repair-backups/
+/backup-temp/
+/.secure-backups/
+
+# Databases and database sidecar files must never be committed
+*.sqlite
+*.sqlite-wal
+*.sqlite-shm
+*.db
+*.db-wal
+*.db-shm
 
 # Local environment configuration
 /.env
 /.env.*
 !/.env.example
+*.pem
+*.key
 
 # Logs and local server output
 *.log
@@ -29,6 +42,8 @@ pnpm-debug.log*
 /*-test-data/
 *.tmp
 *.temp
+*.bak
+*.backup
 
 # Test coverage
 /coverage/
