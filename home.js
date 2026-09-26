@@ -16,6 +16,9 @@ const elements = {
   iconButtonText: document.querySelector('#cohortIconButtonText'),
   removeIcon: document.querySelector('#removeCohortIcon'),
   color: document.querySelector('#newCohortColor'),
+  password: document.querySelector('#newCohortPassword'),
+  passwordConfirmation: document.querySelector('#newCohortPasswordConfirmation'),
+  passwordHelp: document.querySelector('#cohortPasswordHelp'),
   modalStatus: document.querySelector('#cohortModalStatus'),
   saveCohort: document.querySelector('#saveCohort'),
   modalTitle: document.querySelector('#cohortModalTitle'),
@@ -267,6 +270,7 @@ async function loadCohorts() {
 function openModal(mode = 'create', cohort = null) {
   modalMode = mode;
   editingCohort = cohort;
+  elements.form.classList.toggle('cohort-edit-mode', mode === 'edit');
   elements.form.reset();
   removeIconRequested = false;
   compressedIconFile = null;
@@ -277,6 +281,13 @@ function openModal(mode = 'create', cohort = null) {
   elements.supervisorName.value = cohort?.supervisorName || '';
   elements.supervisorTitle.value = cohort?.supervisorTitle || '';
   elements.color.value = cohort?.accentColor || '#0f8ea3';
+  elements.password.value = '';
+  elements.passwordConfirmation.value = '';
+  elements.password.required = mode === 'create' || !cohort?.passwordConfigured;
+  elements.passwordConfirmation.required = elements.password.required;
+  elements.passwordHelp.textContent = mode === 'edit'
+    ? cohort?.passwordConfigured ? 'Leave blank to keep the current password.' : 'Password setup required before this cohort can be opened.'
+    : 'At least 6 characters. Required for new cohorts.';
   elements.iconButtonText.textContent = mode === 'edit' ? 'Replace Photo' : 'Add Photo';
   elements.removeIcon.hidden = !(mode === 'edit' && cohort?.iconUrl);
   elements.removeIcon.disabled = false;
@@ -388,12 +399,22 @@ async function saveCohort(event) {
   const type = elements.type.value;
   const supervisorName = elements.supervisorName.value.trim();
   const supervisorTitle = elements.supervisorTitle.value.trim();
+  const password = elements.password.value;
+  const passwordConfirmation = elements.passwordConfirmation.value;
   if (!program || !sesi) {
     setModalStatus('Program and sesi are required.', 'error');
     return;
   }
   if (type === 'staff' && (!supervisorName || !supervisorTitle)) {
     setModalStatus('Supervisor name and title are required for staff cohorts.', 'error');
+    return;
+  }
+  if ((modalMode === 'create' || !editingCohort?.passwordConfigured || password) && (password.length < 6 || password.length > 128)) {
+    setModalStatus('Password must be 6 to 128 characters.', 'error');
+    return;
+  }
+  if (password !== passwordConfirmation) {
+    setModalStatus('Password confirmation does not match.', 'error');
     return;
   }
 
@@ -413,6 +434,8 @@ async function saveCohort(event) {
     payload.set('supervisorName', supervisorName);
     payload.set('supervisorTitle', supervisorTitle);
     payload.set('accentColor', accentColor);
+    payload.set('password', password);
+    payload.set('passwordConfirmation', passwordConfirmation);
     if (modalMode === 'edit' && removeIconRequested) {
       payload.set('removeIcon', 'true');
     } else if (icon) {

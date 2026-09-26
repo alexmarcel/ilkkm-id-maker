@@ -145,6 +145,11 @@ const elements = {
   frontCanvas: document.querySelector('#frontCanvas'),
   backCanvas: document.querySelector('#backCanvas'),
   previewClosedOverlay: document.querySelector('#previewClosedOverlay'),
+  cohortLogout: document.querySelector('#cohortLogout'),
+  cohortUnlock: document.querySelector('#cohortUnlock'),
+  cohortUnlockForm: document.querySelector('#cohortUnlockForm'),
+  cohortPassword: document.querySelector('#cohortPassword'),
+  cohortUnlockStatus: document.querySelector('#cohortUnlockStatus'),
 };
 
 const frontContext = elements.frontCanvas.getContext('2d');
@@ -794,6 +799,64 @@ function getCohortQuery() {
   return buildQuery({ cohortSlug: state.cohort?.slug || getCohortSlugFromPath() });
 }
 
+function showCohortUnlock(message = 'Password required.') {
+  elements.cohortUnlock.hidden = false;
+  elements.cohortUnlockStatus.querySelector('span').textContent = message;
+  document.body.classList.add('cohort-locked');
+  document.body.classList.add('modal-open');
+  elements.cohortPassword.focus();
+}
+
+function hideCohortUnlock() {
+  elements.cohortUnlock.hidden = true;
+  document.body.classList.remove('cohort-locked');
+  document.body.classList.remove('modal-open');
+}
+
+async function hasCohortSession() {
+  const slug = getCohortSlugFromPath();
+  const response = await fetch(`/api/cohorts/${encodeURIComponent(slug)}/session`, { cache: 'no-store' });
+  const result = await response.json().catch(() => ({}));
+  return Boolean(response.ok && result.authenticated);
+}
+
+async function unlockCohort(event) {
+  event.preventDefault();
+  const slug = getCohortSlugFromPath();
+  const button = elements.cohortUnlockForm.querySelector('button[type="submit"]');
+  button.disabled = true;
+  elements.cohortUnlockStatus.querySelector('span').textContent = 'Checking password...';
+  try {
+    const response = await fetch(`/api/cohorts/${encodeURIComponent(slug)}/session`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ password: elements.cohortPassword.value }),
+    });
+    const result = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(result.error || 'Could not unlock cohort.');
+    elements.cohortPassword.value = '';
+    hideCohortUnlock();
+    await initializeProtectedCohort();
+  } catch (error) {
+    showCohortUnlock(error.message || 'Invalid cohort or password.');
+  } finally {
+    button.disabled = false;
+  }
+}
+
+async function logoutCohort() {
+  const slug = getCohortSlugFromPath();
+  await fetch(`/api/cohorts/${encodeURIComponent(slug)}/session`, { method: 'DELETE' });
+  elements.icInput.value = '';
+  clearStudentFields();
+  state.uploadedPhoto = null;
+  state.uploadedPhotoFile = null;
+  state.templates.front = null;
+  state.templates.back = null;
+  renderRecordsMessage('Cohort locked.');
+  showCohortUnlock('You have logged out.');
+}
+
 function getTemplateUrl(side) {
   const customUrl = side === 'front' ? state.cohort?.frontTemplateUrl : state.cohort?.backTemplateUrl;
   return customUrl || (state.cohort?.type === 'staff' ? `/assets/staff-${side}.jpg` : `/${side}.jpg`);
@@ -878,6 +941,10 @@ async function refreshCohortRecords() {
   try {
     const response = await fetch(`/api/students/records/cohort?${getCohortQuery()}`);
 
+    if (response.status === 401) {
+      showCohortUnlock('Your session expired. Enter the cohort password again.');
+      throw new Error('Session expired');
+    }
     if (!response.ok) {
       throw new Error('Records request failed');
     }
@@ -1160,18 +1227,7 @@ async function loadAcceptingResponseSetting() {
   }
 }
 
-async function init() {
-  if (window.lucide) {
-    window.lucide.createIcons();
-  }
-
-  try {
-    await loadCohort();
-  } catch (error) {
-    setSaveStatus(error.message || 'Cohort not found.', 'error');
-    return;
-  }
-
+async function initializeProtectedCohort() {
   await loadCardFont();
   await loadAcceptingResponseSetting();
 
@@ -1190,6 +1246,23 @@ async function init() {
   renderNow();
   refreshCohortRecords();
 }
+
+async function init() {
+  if (window.lucide) window.lucide.createIcons();
+  try {
+    await loadCohort();
+    if (!await hasCohortSession()) {
+      showCohortUnlock(state.cohort.passwordConfigured ? 'Password required.' : 'An administrator must set a password for this cohort.');
+      return;
+    }
+    await initializeProtectedCohort();
+  } catch (error) {
+    setSaveStatus(error.message || 'Cohort not found.', 'error');
+  }
+}
+
+elements.cohortUnlockForm.addEventListener('submit', unlockCohort);
+elements.cohortLogout.addEventListener('click', logoutCohort);
 
 elements.photoInput.addEventListener('change', handlePhotoChange);
 elements.uploadButton.addEventListener('keydown', (event) => {

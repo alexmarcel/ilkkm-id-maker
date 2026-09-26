@@ -8,8 +8,8 @@ services:
     environment:
       - NODE_ENV=production
       - DATA_DIR=/data
-      - EXPORTS_USERNAME=${ID_MAKER_EXPORTS_USERNAME:-change-this-username}
-      - EXPORTS_PASSWORD=${ID_MAKER_EXPORTS_PASSWORD:-change-this-password}
+      - EXPORTS_USERNAME=${ID_MAKER_EXPORTS_USERNAME:?Set ID_MAKER_EXPORTS_USERNAME}
+      - EXPORTS_PASSWORD=${ID_MAKER_EXPORTS_PASSWORD:?Set ID_MAKER_EXPORTS_PASSWORD}
     volumes:
       - ilkkm_id_maker_data:/data
     networks:

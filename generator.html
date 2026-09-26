@@ -6,7 +6,7 @@
     <title>ILKKM ID Card Maker</title>
     <link rel="stylesheet" href="/styles.css">
   </head>
-  <body>
+  <body class="cohort-locked modal-open">
     <main class="app-shell">
       <section class="workspace" aria-label="Student ID card maker">
         <form class="control-panel" id="cardForm" novalidate>
@@ -134,6 +134,10 @@
               <i data-lucide="lock-keyhole" aria-hidden="true"></i>
               <span>Grid Preview · Protected</span>
             </a>
+            <button class="secondary-action" id="cohortLogout" type="button">
+              <i data-lucide="log-out" aria-hidden="true"></i>
+              <span>Logout</span>
+            </button>
             <a class="secondary-action grid-preview-link" id="exportsLink" href="/exports">
               <i data-lucide="archive" aria-hidden="true"></i>
               <span>Exports</span>
@@ -165,9 +169,20 @@
       <div class="saving-overlay" id="savingOverlay" hidden>
         <img class="app-icon-image" src="/icon.jpg" alt="" aria-hidden="true">
       </div>
+      <div class="modal-overlay cohort-unlock-overlay" id="cohortUnlock">
+        <form class="modal-dialog unlock-dialog" id="cohortUnlockForm" role="dialog" aria-modal="true" aria-labelledby="cohortUnlockTitle">
+          <div class="modal-header unlock-header"><h2 id="cohortUnlockTitle">Unlock Cohort</h2></div>
+          <div class="unlock-body">
+            <p>Enter the password provided by the cohort administrator.</p>
+            <label class="field"><span>Password</span><input id="cohortPassword" type="password" minlength="6" maxlength="128" autocomplete="current-password" required></label>
+            <p class="save-status" id="cohortUnlockStatus" role="status"><i data-lucide="lock-keyhole" aria-hidden="true"></i><span>Checking cohort access...</span></p>
+          </div>
+          <div class="modal-actions"><a class="secondary-action" href="/">Back</a><button class="primary-action" type="submit">Unlock</button></div>
+        </form>
+      </div>
     </main>
 
-    <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
+    <script src="/vendor/lucide.min.js"></script>
     <script src="/app-settings.js"></script>
     <script src="/app.js"></script>
   </body>

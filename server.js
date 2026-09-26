@@ -10,6 +10,8 @@ const sharp = require('sharp');
 const unzipper = require('unzipper');
 
 const app = express();
+app.set('trust proxy', 1);
+app.disable('x-powered-by');
 const PORT = Number(process.env.PORT || 3000);
 const ROOT_DIR = __dirname;
 const DATA_DIR = process.env.DATA_DIR || path.join(ROOT_DIR, '.data');
@@ -27,8 +29,18 @@ const MAX_FULL_BACKUP_ENTRIES = Number(process.env.MAX_FULL_BACKUP_ENTRIES || 10
 const DEFAULT_PROGRAM = 'DIPLOMA KEJURURAWATAN';
 const DEFAULT_SESI = 'SESI JANUARI 2026 - DISEMBER 2028';
 const DEFAULT_APP_NAME = 'ILKKM ID CARD';
-const EXPORTS_USERNAME = process.env.EXPORTS_USERNAME || 'admin';
-const EXPORTS_PASSWORD = process.env.EXPORTS_PASSWORD || 'ilkkm2026';
+const EXPORTS_USERNAME = String(process.env.EXPORTS_USERNAME || '').trim();
+const EXPORTS_PASSWORD = String(process.env.EXPORTS_PASSWORD || '');
+const FORMER_ADMIN_USERNAMES = new Set(['admin', 'change-this-username']);
+const FORMER_ADMIN_PASSWORDS = new Set(['ilkkm2026', 'change-this-password']);
+if (
+  EXPORTS_USERNAME.length < 4
+  || EXPORTS_PASSWORD.length < 12
+  || FORMER_ADMIN_USERNAMES.has(EXPORTS_USERNAME.toLowerCase())
+  || FORMER_ADMIN_PASSWORDS.has(EXPORTS_PASSWORD)
+) {
+  throw new Error('Set EXPORTS_USERNAME and EXPORTS_PASSWORD to unique values (username 4+ characters, password 12+ characters); former defaults are not allowed.');
+}
 const MAX_PHOTO_SIZE = 1024 * 1024;
 const MAX_RESTORE_SIZE = 500 * 1024 * 1024;
 const VALID_IC_PATTERN = /^\d{6}-\d{2}-\d{4}$/;
@@ -38,6 +50,13 @@ const DEFAULT_COHORT_COLOR = '#0f8ea3';
 const TEMPLATE_WIDTH = 1967;
 const TEMPLATE_HEIGHT = 3121;
 const THUMBNAIL_WIDTH = 720;
+const COHORT_SESSION_TTL_MS = 8 * 60 * 60 * 1000;
+const COHORT_SESSION_COOKIE = 'ilkkm_cohort_session';
+const PASSWORD_MIN_LENGTH = 6;
+const PASSWORD_MAX_LENGTH = 128;
+const SECURITY_SCHEMA_VERSION = 1;
+const BACKUP_SCHEMA_VERSION = 3;
+const SECURITY_MIGRATION_KEY = 'security_hardening_v1';
 const FONT_PATH = path.join(ROOT_DIR, 'assets', 'fonts', 'liberation-sans-bold.ttf');
 const FRONT_TEMPLATE_PATH = path.join(ROOT_DIR, 'front.jpg');
 const BACK_TEMPLATE_PATH = path.join(ROOT_DIR, 'back.jpg');
@@ -176,6 +195,29 @@ const megaRestoreUpload = multer({
 
 let megaRestoreInProgress = false;
 
+app.use((req, res, next) => {
+  const requestPath = String(req.path || '');
+  const blockedRootFile = /^\/(?:server\.js|package(?:-lock)?\.json|docker-compose\.ya?ml|Dockerfile|README\.md)$/i.test(requestPath);
+  const blockedStorage = /^\/(?:\.data|data|photos|thumbnails|repair-backups)(?:\/|$)/i.test(requestPath);
+  const blockedDatabase = !requestPath.startsWith('/api/') && /(?:^|\/)[^/]+\.(?:sqlite(?:-(?:wal|shm))?|db|zip)$/i.test(requestPath);
+  const hiddenSegment = /(?:^|\/)\.[^/]+/.test(requestPath);
+  if (blockedRootFile || blockedStorage || blockedDatabase || hiddenSegment) {
+    res.status(404).send('Not found.');
+    return;
+  }
+  next();
+});
+
+app.use((req, res, next) => {
+  res.setHeader('Content-Security-Policy', "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'");
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('X-Frame-Options', 'DENY');
+  res.setHeader('Referrer-Policy', 'no-referrer');
+  res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
+  if (process.env.NODE_ENV === 'production') res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
+  next();
+});
+
 const db = new Database(DB_PATH);
 db.pragma('journal_mode = WAL');
 db.exec(`
@@ -294,6 +336,27 @@ if (cohortColumns.includes('type') && !cohortColumns.includes('supervisor_name')
 if (cohortColumns.includes('type') && !cohortColumns.includes('supervisor_title')) {
   db.exec('ALTER TABLE cohorts ADD COLUMN supervisor_title TEXT');
 }
+if (!cohortColumns.includes('password_hash')) db.exec('ALTER TABLE cohorts ADD COLUMN password_hash TEXT');
+if (!cohortColumns.includes('password_version')) db.exec('ALTER TABLE cohorts ADD COLUMN password_version INTEGER NOT NULL DEFAULT 0');
+db.exec(`
+  CREATE TABLE IF NOT EXISTS cohort_sessions (
+    token_hash TEXT PRIMARY KEY,
+    cohort_id INTEGER NOT NULL,
+    password_version INTEGER NOT NULL,
+    expires_at TEXT NOT NULL,
+    created_at TEXT NOT NULL
+  );
+  CREATE INDEX IF NOT EXISTS idx_cohort_sessions_expiry ON cohort_sessions (expires_at);
+  CREATE TABLE IF NOT EXISTS security_audit (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    event TEXT NOT NULL,
+    cohort_id INTEGER,
+    subject TEXT,
+    ip_address TEXT,
+    created_at TEXT NOT NULL
+  );
+  CREATE INDEX IF NOT EXISTS idx_security_audit_created ON security_audit (created_at);
+`);
 
 function getSetting(key, fallback = '') {
   const row = db.prepare('SELECT value FROM settings WHERE key = ?').get(key);
@@ -416,6 +479,7 @@ function serializeCohort(cohort, recordCount = null) {
     backTemplateFilename: hasBackTemplate ? cohort.back_template_filename : null,
     accentColor: cohort.accent_color || DEFAULT_COHORT_COLOR,
     acceptingResponse: Boolean(cohort.accepting_response_closed),
+    passwordConfigured: Boolean(cohort.password_hash),
     createdAt: cohort.created_at,
     updatedAt: cohort.updated_at,
   };
@@ -429,7 +493,7 @@ function serializeCohort(cohort, recordCount = null) {
 
 function getCohortBySlug(slug) {
   return db.prepare(`
-    SELECT id, slug, program, sesi, type, supervisor_name, supervisor_title, icon_filename, front_template_filename, back_template_filename, accent_color, accepting_response_closed, created_at, updated_at
+    SELECT id, slug, program, sesi, type, supervisor_name, supervisor_title, icon_filename, front_template_filename, back_template_filename, accent_color, accepting_response_closed, password_hash, password_version, created_at, updated_at
     FROM cohorts
     WHERE slug = ?
   `).get(String(slug || '').trim());
@@ -437,7 +501,7 @@ function getCohortBySlug(slug) {
 
 function getCohortById(id) {
   return db.prepare(`
-    SELECT id, slug, program, sesi, type, supervisor_name, supervisor_title, icon_filename, front_template_filename, back_template_filename, accent_color, accepting_response_closed, created_at, updated_at
+    SELECT id, slug, program, sesi, type, supervisor_name, supervisor_title, icon_filename, front_template_filename, back_template_filename, accent_color, accepting_response_closed, password_hash, password_version, created_at, updated_at
     FROM cohorts
     WHERE id = ?
   `).get(Number(id || 0));
@@ -446,7 +510,7 @@ function getCohortById(id) {
 function getCohortByProgramSesi(program, sesi, type = 'student') {
   const normalized = normalizeProgramSesi(program, sesi);
   return db.prepare(`
-    SELECT id, slug, program, sesi, type, supervisor_name, supervisor_title, icon_filename, front_template_filename, back_template_filename, accent_color, accepting_response_closed, created_at, updated_at
+    SELECT id, slug, program, sesi, type, supervisor_name, supervisor_title, icon_filename, front_template_filename, back_template_filename, accent_color, accepting_response_closed, password_hash, password_version, created_at, updated_at
     FROM cohorts
     WHERE program = ? AND sesi = ? AND type = ?
   `).get(normalized.program, normalized.sesi, normalizeCohortType(type));
@@ -461,9 +525,9 @@ function createCohort(program, sesi, options = {}) {
   const accentColor = normalizeColor(options.accentColor);
 
   db.prepare(`
-    INSERT INTO cohorts (slug, program, sesi, type, supervisor_name, supervisor_title, icon_filename, accent_color, accepting_response_closed, created_at, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `).run(slug, normalized.program, normalized.sesi, type, options.supervisorName || null, options.supervisorTitle || null, options.iconFilename || null, accentColor, acceptingResponseClosed, now, now);
+    INSERT INTO cohorts (slug, program, sesi, type, supervisor_name, supervisor_title, icon_filename, accent_color, accepting_response_closed, password_hash, password_version, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(slug, normalized.program, normalized.sesi, type, options.supervisorName || null, options.supervisorTitle || null, options.iconFilename || null, accentColor, acceptingResponseClosed, options.passwordHash || null, options.passwordHash ? 1 : 0, now, now);
 
   return getCohortBySlug(slug);
 }
@@ -492,18 +556,32 @@ function getCohortFromRequest(req) {
 function migrateCohorts() {
   const defaultCohort = getDefaultCohort();
   const groups = db.prepare(`
-    SELECT DISTINCT program, sesi
+    SELECT DISTINCT
+      students.program,
+      students.sesi,
+      CASE WHEN COALESCE(students.job_title, '') != '' THEN 'staff' ELSE 'student' END AS inferred_type
     FROM students
-    WHERE program IS NOT NULL AND sesi IS NOT NULL
+    LEFT JOIN cohorts ON cohorts.id = students.cohort_id
+    WHERE students.program IS NOT NULL
+      AND students.sesi IS NOT NULL
+      AND (students.cohort_id IS NULL OR cohorts.id IS NULL)
   `).all();
 
   groups.forEach((group) => {
-    const cohort = getOrCreateCohort(group.program, group.sesi);
+    const cohort = getOrCreateCohort(group.program, group.sesi, { type: group.inferred_type });
     db.prepare(`
       UPDATE students
       SET cohort_id = ?, program = ?, sesi = ?
-      WHERE program = ? AND sesi = ? AND (cohort_id IS NULL OR cohort_id != ?)
-    `).run(cohort.id, cohort.program, cohort.sesi, group.program, group.sesi, cohort.id);
+      WHERE ic_number IN (
+        SELECT students.ic_number
+        FROM students
+        LEFT JOIN cohorts ON cohorts.id = students.cohort_id
+        WHERE students.program = ?
+          AND students.sesi = ?
+          AND CASE WHEN COALESCE(students.job_title, '') != '' THEN 'staff' ELSE 'student' END = ?
+          AND (students.cohort_id IS NULL OR cohorts.id IS NULL)
+      )
+    `).run(cohort.id, cohort.program, cohort.sesi, group.program, group.sesi, group.inferred_type);
   });
 
   db.prepare(`
@@ -514,6 +592,23 @@ function migrateCohorts() {
 }
 
 migrateCohorts();
+
+function applySecurityHardeningMigration() {
+  if (getSetting(SECURITY_MIGRATION_KEY, '') === 'complete') return false;
+  db.transaction(() => {
+    db.prepare(`
+      UPDATE cohorts
+      SET password_hash = NULL,
+          password_version = COALESCE(password_version, 0) + 1,
+          updated_at = ?
+    `).run(new Date().toISOString());
+    db.prepare('DELETE FROM cohort_sessions').run();
+    setSetting(SECURITY_MIGRATION_KEY, 'complete');
+  })();
+  return true;
+}
+
+applySecurityHardeningMigration();
 
 function stripIcHyphens(icNumber) {
   return String(icNumber).replace(/-/g, '');
@@ -1429,6 +1524,111 @@ async function restoreCohortBackup(parsed, cohort) {
   }
 }
 
+function validateCohortPassword(password) {
+  const value = String(password || '');
+  if (value.length < PASSWORD_MIN_LENGTH || value.length > PASSWORD_MAX_LENGTH) {
+    throw new Error(`Password must be ${PASSWORD_MIN_LENGTH} to ${PASSWORD_MAX_LENGTH} characters.`);
+  }
+  return value;
+}
+
+function hashCohortPassword(password) {
+  const salt = crypto.randomBytes(16);
+  const derived = crypto.scryptSync(validateCohortPassword(password), salt, 64);
+  return `scrypt$${salt.toString('base64')}$${derived.toString('base64')}`;
+}
+
+function isValidPasswordHash(value) {
+  const parts = String(value || '').split('$');
+  if (parts.length !== 3 || parts[0] !== 'scrypt') return false;
+  try {
+    return Buffer.from(parts[1], 'base64').length === 16 && Buffer.from(parts[2], 'base64').length === 64;
+  } catch (error) {
+    return false;
+  }
+}
+
+function verifyCohortPassword(password, storedHash) {
+  if (!isValidPasswordHash(storedHash)) return false;
+  const [, salt, expected] = storedHash.split('$');
+  const actual = crypto.scryptSync(String(password || ''), Buffer.from(salt, 'base64'), 64);
+  return crypto.timingSafeEqual(actual, Buffer.from(expected, 'base64'));
+}
+
+function parseCookies(req) {
+  return Object.fromEntries(String(req.headers.cookie || '').split(';').map((item) => {
+    const separator = item.indexOf('=');
+    if (separator < 0) return ['', ''];
+    return [item.slice(0, separator).trim(), decodeURIComponent(item.slice(separator + 1).trim())];
+  }).filter(([key]) => key));
+}
+
+function getBasicCredentials(req) {
+  const [scheme, encoded] = String(req.headers.authorization || '').split(' ');
+  if (scheme !== 'Basic' || !encoded) return null;
+  const decoded = Buffer.from(encoded, 'base64').toString('utf8');
+  const separator = decoded.indexOf(':');
+  if (separator < 0) return null;
+  return { username: decoded.slice(0, separator), password: decoded.slice(separator + 1) };
+}
+
+function hasAdminAccess(req) {
+  const credentials = getBasicCredentials(req);
+  return Boolean(credentials && safeCompare(credentials.username, EXPORTS_USERNAME) && safeCompare(credentials.password, EXPORTS_PASSWORD));
+}
+
+function auditSecurity(event, req, cohort = null, subject = null) {
+  try {
+    db.prepare('INSERT INTO security_audit (event, cohort_id, subject, ip_address, created_at) VALUES (?, ?, ?, ?, ?)')
+      .run(event, cohort?.id || null, subject ? String(subject).slice(0, 160) : null, String(req.ip || req.socket?.remoteAddress || '').slice(0, 80), new Date().toISOString());
+    db.prepare("DELETE FROM security_audit WHERE id NOT IN (SELECT id FROM security_audit ORDER BY id DESC LIMIT 10000)").run();
+  } catch (error) {
+    // Audit failures must not disclose details or break the request.
+  }
+}
+
+function setPrivateNoStore(res) {
+  res.setHeader('Cache-Control', 'private, no-store');
+  res.setHeader('Pragma', 'no-cache');
+  res.setHeader('Vary', 'Cookie, Authorization');
+}
+
+function getCohortSession(req, cohort) {
+  const token = parseCookies(req)[COHORT_SESSION_COOKIE];
+  if (!token || !cohort) return null;
+  const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
+  const session = db.prepare('SELECT * FROM cohort_sessions WHERE token_hash = ? AND cohort_id = ?').get(tokenHash, cohort.id);
+  if (!session || Number(session.password_version) !== Number(cohort.password_version || 0) || Date.parse(session.expires_at) <= Date.now()) {
+    if (session) db.prepare('DELETE FROM cohort_sessions WHERE token_hash = ?').run(tokenHash);
+    return null;
+  }
+  return session;
+}
+
+function requireSameOrigin(req, res, next) {
+  const origin = req.headers.origin;
+  if (origin) {
+    const expected = `${req.protocol}://${req.get('host')}`;
+    if (origin !== expected) return res.status(403).json({ error: 'Cross-origin request rejected.' });
+  }
+  next();
+}
+
+function requireCohortAccess(resolveCohort) {
+  return (req, res, next) => {
+    const cohort = resolveCohort(req);
+    if (!cohort) return sendCohortNotFound(res);
+    if (!hasAdminAccess(req) && !getCohortSession(req, cohort)) {
+      setPrivateNoStore(res);
+      return res.status(401).json({ error: cohort.password_hash ? 'Cohort password required.' : 'Cohort password setup required.' });
+    }
+    req.authorizedCohort = cohort;
+    setPrivateNoStore(res);
+    auditSecurity('cohort_access', req, cohort, req.params?.icNumber || null);
+    next();
+  };
+}
+
 const MEGA_MANAGED_DIRS = {
   photos: PHOTOS_DIR,
   exports: EXPORTS_DIR,
@@ -1500,7 +1700,8 @@ function buildMegaSnapshot() {
     app: 'ilkkm-id-card-generator',
     type: 'mega-backup',
     version: 1,
-    schemaVersion: 1,
+    schemaVersion: BACKUP_SCHEMA_VERSION,
+    securityVersion: SECURITY_SCHEMA_VERSION,
     exportedAt: new Date().toISOString(),
     counts: {
       cohorts: database.cohorts.length,
@@ -1547,6 +1748,8 @@ function validateMegaDatabase(database, manifest) {
     if (!slug || path.basename(slug) !== slug || slugs.has(slug)) throw new Error('Backup contains duplicate or invalid cohort slugs.');
     if (cohortKeys.has(key)) throw new Error('Backup contains duplicate Program/Sesi/Type cohorts.');
     if (type === 'staff' && (!String(cohort.supervisor_name || '').trim() || !String(cohort.supervisor_title || '').trim())) throw new Error(`Staff cohort ${slug} is missing supervisor details.`);
+    if (cohort.password_hash != null && !isValidPasswordHash(cohort.password_hash)) throw new Error(`Cohort ${slug} has an invalid password hash.`);
+    if (cohort.password_version != null && (!Number.isInteger(Number(cohort.password_version)) || Number(cohort.password_version) < 0)) throw new Error(`Cohort ${slug} has an invalid password version.`);
     cohortIds.add(Number(cohort.id)); slugs.add(slug); cohortKeys.add(key);
   });
   const seenIc = new Set();
@@ -1581,6 +1784,7 @@ async function parseMegaBackup(filePath) {
   requiredJson.forEach((entryPath) => { if (!entries.has(entryPath)) throw new Error(`Mega backup is missing ${entryPath}.`); });
   const manifest = await readZipJson(entries.get('manifest.json'), 'manifest.json');
   if (manifest.app !== 'ilkkm-id-card-generator' || manifest.type !== 'mega-backup' || Number(manifest.version) !== 1) throw new Error('Mega backup format or version is not supported.');
+  if (manifest.schemaVersion != null && ![1, 2, BACKUP_SCHEMA_VERSION].includes(Number(manifest.schemaVersion))) throw new Error('Mega backup schema version is not supported.');
   if (!Array.isArray(manifest.files)) throw new Error('Mega backup file manifest is invalid.');
   const declared = new Map();
   manifest.files.forEach((file) => {
@@ -1618,21 +1822,27 @@ async function parseMegaBackup(filePath) {
   requiredFiles.forEach((entryPath) => { if (!declared.has(entryPath)) throw new Error(`Mega backup is missing required file ${entryPath}.`); });
   return {
     manifest, database, directory, declared,
+    secureBackup: Number(manifest.schemaVersion) === BACKUP_SCHEMA_VERSION && Number(manifest.securityVersion) === SECURITY_SCHEMA_VERSION,
     summary: { ...manifest.counts, archiveSize: fs.statSync(filePath).size, uncompressedSize, warnings: [] },
   };
 }
 
-function replaceMegaDatabase(database) {
+function replaceMegaDatabase(database, options = {}) {
+  const preserveSecurePasswords = options.preserveSecurePasswords === true;
   const operation = db.transaction(() => {
+    db.prepare('DELETE FROM cohort_sessions').run();
     db.prepare('DELETE FROM students').run();
     db.prepare('DELETE FROM cohorts').run();
     db.prepare('DELETE FROM settings').run();
     db.prepare('DELETE FROM game_scores').run();
     const cohortInsert = db.prepare(`INSERT INTO cohorts (
       id, slug, program, sesi, icon_filename, front_template_filename, back_template_filename,
-      accent_color, accepting_response_closed, type, supervisor_name, supervisor_title, created_at, updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
-    database.cohorts.forEach((row) => cohortInsert.run(row.id, row.slug, row.program, row.sesi, row.icon_filename || null, row.front_template_filename || null, row.back_template_filename || null, row.accent_color || DEFAULT_COHORT_COLOR, Number(row.accepting_response_closed || 0), row.type || 'student', row.supervisor_name || null, row.supervisor_title || null, row.created_at, row.updated_at));
+      accent_color, accepting_response_closed, type, supervisor_name, supervisor_title, password_hash, password_version, created_at, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
+    database.cohorts.forEach((row) => cohortInsert.run(row.id, row.slug, row.program, row.sesi, row.icon_filename || null, row.front_template_filename || null, row.back_template_filename || null, row.accent_color || DEFAULT_COHORT_COLOR, Number(row.accepting_response_closed || 0), row.type || 'student', row.supervisor_name || null, row.supervisor_title || null,
+      preserveSecurePasswords ? row.password_hash || null : null,
+      preserveSecurePasswords ? Number(row.password_version || 0) : Number(row.password_version || 0) + 1,
+      row.created_at, row.updated_at));
     const studentInsert = db.prepare(`INSERT INTO students (
       ic_number, name, matrix_number, program, sesi, photo_filename, front_filename, back_filename,
       created_at, updated_at, cohort_id, job_title, staff_number
@@ -1647,6 +1857,7 @@ function replaceMegaDatabase(database) {
     const maxScoreId = Math.max(0, ...database.gameScores.map((row) => Number(row.id || 0)));
     if (maxCohortId) db.prepare("INSERT INTO sqlite_sequence(name, seq) VALUES ('cohorts', ?)").run(maxCohortId);
     if (maxScoreId) db.prepare("INSERT INTO sqlite_sequence(name, seq) VALUES ('game_scores', ?)").run(maxScoreId);
+    setSetting(SECURITY_MIGRATION_KEY, 'complete');
   });
   operation();
 }
@@ -1669,7 +1880,7 @@ function restoreInterruptedMegaOperation() {
   const recoveryDir = String(journal.recoveryDir || '');
   const databasePath = path.join(recoveryDir, 'database-before.json');
   if (!recoveryDir || !fs.existsSync(databasePath)) throw new Error('Mega restore recovery journal is incomplete.');
-  replaceMegaDatabase(JSON.parse(fs.readFileSync(databasePath, 'utf8')));
+  replaceMegaDatabase(JSON.parse(fs.readFileSync(databasePath, 'utf8')), { preserveSecurePasswords: true });
   Object.entries(MEGA_MANAGED_DIRS).forEach(([prefix, target]) => {
     const oldPath = path.join(recoveryDir, prefix);
     if (fs.existsSync(target)) fs.rmSync(target, { recursive: true, force: true });
@@ -1697,7 +1908,7 @@ async function performMegaRestore(parsed) {
       if (fs.existsSync(target)) fs.renameSync(target, path.join(recoveryDir, prefix));
       fs.renameSync(path.join(stagingDir, prefix), target);
     });
-    replaceMegaDatabase(parsed.database);
+    replaceMegaDatabase(parsed.database, { preserveSecurePasswords: parsed.secureBackup });
     fs.rmSync(THUMBNAILS_DIR, { recursive: true, force: true });
     fs.mkdirSync(THUMBNAILS_DIR, { recursive: true });
     fs.rmSync(recoveryDir, { recursive: true, force: true });
@@ -1725,11 +1936,19 @@ async function writeRawBackupArchive(destination) {
   const snapshotDbPath = path.join(snapshotDir, 'app.sqlite');
   fs.mkdirSync(snapshotDir, { recursive: true });
   await db.backup(snapshotDbPath);
+  const sanitizedSnapshot = new Database(snapshotDbPath);
+  try {
+    const hasSessions = sanitizedSnapshot.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'cohort_sessions'").get();
+    if (hasSessions) sanitizedSnapshot.prepare('DELETE FROM cohort_sessions').run();
+  } finally {
+    sanitizedSnapshot.close();
+  }
   const manifest = {
     app: 'ilkkm-id-card-generator',
     type: 'full-raw-backup',
     version: 1,
-    schemaVersion: 1,
+    schemaVersion: BACKUP_SCHEMA_VERSION,
+    securityVersion: SECURITY_SCHEMA_VERSION,
     exportedAt: new Date().toISOString(),
   };
   return new Promise((resolve, reject) => {
@@ -1776,13 +1995,15 @@ async function extractRawBackup(filePath) {
     const snapshotDbPath = path.join(stagingDir, 'app.sqlite');
     if (!fs.existsSync(manifestPath) || !fs.existsSync(snapshotDbPath)) throw new Error('Backup must contain manifest.json and app.sqlite.');
     const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
-    if (manifest.app !== 'ilkkm-id-card-generator' || manifest.type !== 'full-raw-backup' || Number(manifest.version) !== 1 || Number(manifest.schemaVersion) !== 1) throw new Error('Backup format or schema version is not supported.');
+    if (manifest.app !== 'ilkkm-id-card-generator' || manifest.type !== 'full-raw-backup' || Number(manifest.version) !== 1 || ![1, 2, BACKUP_SCHEMA_VERSION].includes(Number(manifest.schemaVersion))) throw new Error('Backup format or schema version is not supported.');
     const snapshotDb = new Database(snapshotDbPath, { readonly: true, fileMustExist: true });
     try {
       const tables = new Set(snapshotDb.prepare("SELECT name FROM sqlite_master WHERE type = 'table'").all().map((row) => row.name));
       ['cohorts', 'students', 'settings', 'game_scores'].forEach((table) => { if (!tables.has(table)) throw new Error(`Backup database is missing ${table}.`); });
       return {
         stagingDir,
+        manifest,
+        secureBackup: Number(manifest.schemaVersion) === BACKUP_SCHEMA_VERSION && Number(manifest.securityVersion) === SECURITY_SCHEMA_VERSION,
         database: {
           cohorts: snapshotDb.prepare('SELECT * FROM cohorts ORDER BY id').all(),
           students: snapshotDb.prepare('SELECT * FROM students ORDER BY ic_number').all(),
@@ -1812,9 +2033,9 @@ function performRawRestore(parsed) {
       if (fs.existsSync(target)) fs.renameSync(target, path.join(rollbackDir, entryName));
       fs.renameSync(staged, target);
     });
-    replaceMegaDatabase(parsed.database);
+    replaceMegaDatabase(parsed.database, { preserveSecurePasswords: parsed.secureBackup });
   } catch (error) {
-    try { replaceMegaDatabase(databaseBefore); } catch (databaseError) { error.databaseRollbackError = databaseError; }
+    try { replaceMegaDatabase(databaseBefore, { preserveSecurePasswords: true }); } catch (databaseError) { error.databaseRollbackError = databaseError; }
     if (swappedEntries.length) {
       Object.entries(RAW_BACKUP_DIRS).filter(([entryName]) => swappedEntries.includes(entryName)).forEach(([entryName, target]) => {
         const previous = path.join(rollbackDir, entryName);
@@ -1831,24 +2052,7 @@ function performRawRestore(parsed) {
 }
 
 function requireExportsPassword(req, res, next) {
-  const authorization = req.headers.authorization || '';
-  const [scheme, encoded] = authorization.split(' ');
-
-  if (scheme === 'Basic' && encoded) {
-    const decoded = Buffer.from(encoded, 'base64').toString('utf8');
-    const separatorIndex = decoded.indexOf(':');
-    const username = decoded.slice(0, separatorIndex);
-    const password = decoded.slice(separatorIndex + 1);
-
-    if (
-      separatorIndex > -1
-      && safeCompare(username, EXPORTS_USERNAME)
-      && safeCompare(password, EXPORTS_PASSWORD)
-    ) {
-      next();
-      return;
-    }
-  }
+  if (hasAdminAccess(req)) return next();
 
   res.setHeader('WWW-Authenticate', 'Basic realm="ILKKM Exports", charset="UTF-8"');
   res.status(401).send('Exports password required.');
@@ -1947,6 +2151,10 @@ function streamCardsZip(req, res) {
 app.get('/api/exports/cards.zip', requireExportsPassword, streamCardsZip);
 
 app.use(['/exports', '/exports.html', '/api/exports'], requireExportsPassword);
+app.use('/api/exports', (req, res, next) => {
+  setPrivateNoStore(res);
+  next();
+});
 app.use(/^\/cohorts\/[^/]+\/exports\/?$/, requireExportsPassword);
 app.use(/^\/cohorts\/[^/]+\/grid\/?$/, requireExportsPassword);
 app.use(['/grid', '/grid.html'], requireExportsPassword);
@@ -1955,6 +2163,11 @@ app.use(/^\/admin\/cohorts\/[^/]+\/edit\/?$/, requireExportsPassword);
 app.use('/admin/app-settings', requireExportsPassword);
 app.use('/admin.html', requireExportsPassword);
 app.use('/api/admin', requireExportsPassword);
+app.use(['/game', '/game.html', '/api/game'], requireExportsPassword);
+app.use(['/api/admin', '/api/game'], (req, res, next) => {
+  setPrivateNoStore(res);
+  next();
+});
 
 app.use((req, res, next) => {
   if (megaRestoreInProgress && !['GET', 'HEAD', 'OPTIONS'].includes(req.method) && req.path !== '/api/admin/restore') {
@@ -2033,10 +2246,33 @@ app.get('/game', (req, res) => {
   res.sendFile(path.join(ROOT_DIR, 'game.html'));
 });
 
-app.use(express.static(ROOT_DIR, {
-  extensions: ['html'],
-  index: 'index.html',
-}));
+const PUBLIC_FILES = new Map([
+  ['/', 'index.html'],
+  ['/index.html', 'index.html'],
+  ['/styles.css', 'styles.css'],
+  ['/home.js', 'home.js'],
+  ['/app.js', 'app.js'],
+  ['/app-settings.js', 'app-settings.js'],
+  ['/grid.js', 'grid.js'],
+  ['/exports.js', 'exports.js'],
+  ['/admin.js', 'admin.js'],
+  ['/game.js', 'game.js'],
+  ['/icon.jpg', 'icon.jpg'],
+  ['/front.jpg', 'front.jpg'],
+  ['/back.jpg', 'back.jpg'],
+  ['/match_game.jpg', 'match_game.jpg'],
+  ['/assets/staff-front.jpg', 'assets/staff-front.jpg'],
+  ['/assets/staff-back.jpg', 'assets/staff-back.jpg'],
+  ['/assets/fonts/liberation-sans-bold.ttf', 'assets/fonts/liberation-sans-bold.ttf'],
+]);
+
+for (const [route, filename] of PUBLIC_FILES) {
+  app.get(route, (req, res) => res.sendFile(path.join(ROOT_DIR, filename)));
+}
+
+app.get('/vendor/lucide.min.js', (req, res) => {
+  res.sendFile(require.resolve('lucide/dist/umd/lucide.min.js'));
+});
 
 app.get('/api/app-settings', (req, res) => {
   res.json(getAppSettings());
@@ -2129,6 +2365,8 @@ app.get('/api/cohorts', (req, res) => {
       cohorts.back_template_filename,
       cohorts.accent_color,
       cohorts.accepting_response_closed,
+      cohorts.password_hash,
+      cohorts.password_version,
       cohorts.created_at,
       cohorts.updated_at,
       COUNT(students.ic_number) AS record_count
@@ -2152,6 +2390,50 @@ app.get('/api/cohorts/:slug', (req, res) => {
 
   const row = db.prepare('SELECT COUNT(*) AS count FROM students WHERE cohort_id = ?').get(cohort.id);
   res.json(serializeCohort(cohort, Number(row.count || 0)));
+});
+
+const cohortLoginAttempts = new Map();
+function isLoginRateLimited(req, slug) {
+  const key = `${req.ip || req.socket?.remoteAddress || ''}:${slug}`;
+  const now = Date.now();
+  const recent = (cohortLoginAttempts.get(key) || []).filter((time) => now - time < 15 * 60 * 1000);
+  recent.push(now);
+  cohortLoginAttempts.set(key, recent);
+  return recent.length > 10;
+}
+
+app.get('/api/cohorts/:slug/session', (req, res) => {
+  const cohort = getCohortBySlug(req.params.slug);
+  setPrivateNoStore(res);
+  if (!cohort) return sendCohortNotFound(res);
+  res.json({ authenticated: hasAdminAccess(req) || Boolean(getCohortSession(req, cohort)), passwordConfigured: Boolean(cohort.password_hash) });
+});
+
+app.post('/api/cohorts/:slug/session', express.json({ limit: '2kb' }), requireSameOrigin, (req, res) => {
+  const cohort = getCohortBySlug(req.params.slug);
+  setPrivateNoStore(res);
+  if (!cohort || isLoginRateLimited(req, req.params.slug) || !verifyCohortPassword(req.body?.password, cohort?.password_hash)) {
+    auditSecurity('cohort_login_failed', req, cohort);
+    return res.status(401).json({ error: 'Invalid cohort or password.' });
+  }
+  db.prepare('DELETE FROM cohort_sessions WHERE expires_at <= ?').run(new Date().toISOString());
+  const token = crypto.randomBytes(32).toString('base64url');
+  const expiresAt = new Date(Date.now() + COHORT_SESSION_TTL_MS);
+  db.prepare('INSERT INTO cohort_sessions (token_hash, cohort_id, password_version, expires_at, created_at) VALUES (?, ?, ?, ?, ?)')
+    .run(crypto.createHash('sha256').update(token).digest('hex'), cohort.id, cohort.password_version || 0, expiresAt.toISOString(), new Date().toISOString());
+  res.cookie(COHORT_SESSION_COOKIE, token, { httpOnly: true, secure: process.env.NODE_ENV === 'production', sameSite: 'lax', path: '/', maxAge: COHORT_SESSION_TTL_MS });
+  auditSecurity('cohort_login_success', req, cohort);
+  res.json({ authenticated: true, expiresAt: expiresAt.toISOString() });
+});
+
+app.delete('/api/cohorts/:slug/session', requireSameOrigin, (req, res) => {
+  const cohort = getCohortBySlug(req.params.slug);
+  const token = parseCookies(req)[COHORT_SESSION_COOKIE];
+  if (token) db.prepare('DELETE FROM cohort_sessions WHERE token_hash = ?').run(crypto.createHash('sha256').update(token).digest('hex'));
+  res.clearCookie(COHORT_SESSION_COOKIE, { httpOnly: true, secure: process.env.NODE_ENV === 'production', sameSite: 'lax', path: '/' });
+  setPrivateNoStore(res);
+  auditSecurity('cohort_logout', req, cohort);
+  res.status(204).end();
 });
 
 app.get('/api/cohorts/:slug/icon', (req, res) => {
@@ -2298,6 +2580,8 @@ app.post('/api/exports/cohorts', cohortIconUpload.single('icon'), async (req, re
     const type = normalizeCohortType(req.body?.type);
     const supervisorName = String(req.body?.supervisorName || '').trim().toUpperCase();
     const supervisorTitle = String(req.body?.supervisorTitle || '').trim().toUpperCase();
+    const password = validateCohortPassword(req.body?.password);
+    if (password !== String(req.body?.passwordConfirmation || '')) throw new Error('Password confirmation does not match.');
     if (!normalized.program || !normalized.sesi) {
       res.status(400).json({ error: 'Program and sesi are required.' });
       return;
@@ -2316,7 +2600,7 @@ app.post('/api/exports/cohorts', cohortIconUpload.single('icon'), async (req, re
     const slug = getCohortSlug(normalized.program, normalized.sesi, type);
     const iconFilename = await saveCohortIcon(req.file, slug);
     const accentColor = normalizeColor(req.body?.accentColor);
-    const cohort = createCohort(normalized.program, normalized.sesi, { type, supervisorName, supervisorTitle, iconFilename, accentColor });
+    const cohort = createCohort(normalized.program, normalized.sesi, { type, supervisorName, supervisorTitle, iconFilename, accentColor, passwordHash: hashCohortPassword(password) });
     res.status(201).json({ cohort: serializeCohort(cohort, 0) });
   } catch (error) {
     res.status(400).json({ error: error.message || 'Could not create cohort.' });
@@ -2335,6 +2619,11 @@ app.patch('/api/exports/cohorts/:slug', cohortIconUpload.single('icon'), async (
     const type = normalizeCohortType(req.body?.type || cohort.type);
     const supervisorName = String(req.body?.supervisorName || '').trim().toUpperCase();
     const supervisorTitle = String(req.body?.supervisorTitle || '').trim().toUpperCase();
+    const requestedPassword = String(req.body?.password || '');
+    if (requestedPassword) {
+      validateCohortPassword(requestedPassword);
+      if (requestedPassword !== String(req.body?.passwordConfirmation || '')) throw new Error('Password confirmation does not match.');
+    }
     if (!normalized.program || !normalized.sesi) {
       res.status(400).json({ error: 'Program and sesi are required.' });
       return;
@@ -2374,13 +2663,16 @@ app.patch('/api/exports/cohorts/:slug', cohortIconUpload.single('icon'), async (
       : cohort.icon_filename;
     const accentColor = normalizeColor(req.body?.accentColor || cohort.accent_color);
     const now = new Date().toISOString();
+    const updatedPasswordHash = requestedPassword ? hashCohortPassword(requestedPassword) : cohort.password_hash;
+    const updatedPasswordVersion = requestedPassword ? Number(cohort.password_version || 0) + 1 : Number(cohort.password_version || 0);
 
     const updateTransaction = db.transaction(() => {
       db.prepare(`
         UPDATE cohorts
-        SET slug = ?, program = ?, sesi = ?, type = ?, supervisor_name = ?, supervisor_title = ?, icon_filename = ?, accent_color = ?, updated_at = ?
+        SET slug = ?, program = ?, sesi = ?, type = ?, supervisor_name = ?, supervisor_title = ?, icon_filename = ?, accent_color = ?, password_hash = ?, password_version = ?, updated_at = ?
         WHERE id = ?
-      `).run(newSlug, normalized.program, normalized.sesi, type, type === 'staff' ? supervisorName : null, type === 'staff' ? supervisorTitle : null, iconFilename || null, accentColor, now, cohort.id);
+      `).run(newSlug, normalized.program, normalized.sesi, type, type === 'staff' ? supervisorName : null, type === 'staff' ? supervisorTitle : null, iconFilename || null, accentColor,
+        updatedPasswordHash, updatedPasswordVersion, now, cohort.id);
 
       db.prepare(`
         UPDATE students
@@ -2390,7 +2682,6 @@ app.patch('/api/exports/cohorts/:slug', cohortIconUpload.single('icon'), async (
     });
 
     updateTransaction();
-
     try {
       if (slugChanged && fs.existsSync(oldExportDir)) {
         fs.renameSync(oldExportDir, newExportDir);
@@ -2398,15 +2689,20 @@ app.patch('/api/exports/cohorts/:slug', cohortIconUpload.single('icon'), async (
     } catch (error) {
       db.prepare(`
         UPDATE cohorts
-        SET slug = ?, program = ?, sesi = ?, type = ?, supervisor_name = ?, supervisor_title = ?, icon_filename = ?, accent_color = ?, updated_at = ?
+        SET slug = ?, program = ?, sesi = ?, type = ?, supervisor_name = ?, supervisor_title = ?, icon_filename = ?, accent_color = ?, password_hash = ?, password_version = ?, updated_at = ?
         WHERE id = ?
-      `).run(oldSlug, cohort.program, cohort.sesi, cohort.type, cohort.supervisor_name || null, cohort.supervisor_title || null, cohort.icon_filename || null, cohort.accent_color || DEFAULT_COHORT_COLOR, new Date().toISOString(), cohort.id);
+      `).run(oldSlug, cohort.program, cohort.sesi, cohort.type, cohort.supervisor_name || null, cohort.supervisor_title || null, cohort.icon_filename || null, cohort.accent_color || DEFAULT_COHORT_COLOR, cohort.password_hash || null, Number(cohort.password_version || 0), new Date().toISOString(), cohort.id);
       db.prepare(`
         UPDATE students
         SET program = ?, sesi = ?, updated_at = ?
         WHERE cohort_id = ?
       `).run(cohort.program, cohort.sesi, new Date().toISOString(), cohort.id);
       throw error;
+    }
+
+    if (requestedPassword) {
+      db.prepare('DELETE FROM cohort_sessions WHERE cohort_id = ?').run(cohort.id);
+      auditSecurity('cohort_password_changed', req, cohort);
     }
 
     if ((removeIcon || req.file) && cohort.icon_filename && cohort.icon_filename !== iconFilename) {
@@ -2468,6 +2764,7 @@ app.delete('/api/exports/cohorts/:slug', express.json(), (req, res) => {
     });
 
     db.transaction(() => {
+      db.prepare('DELETE FROM cohort_sessions WHERE cohort_id = ?').run(cohort.id);
       db.prepare('DELETE FROM students WHERE cohort_id = ?').run(cohort.id);
       const result = db.prepare('DELETE FROM cohorts WHERE id = ?').run(cohort.id);
       if (result.changes !== 1) throw new Error('Cohort changed before it could be deleted.');
@@ -2858,7 +3155,7 @@ app.get('/api/exports/records/:icNumber/:side', (req, res) => {
   res.sendFile(cardPath);
 });
 
-app.get('/api/students/:icNumber', (req, res) => {
+app.get('/api/students/:icNumber', requireCohortAccess((req) => getCohortFromRequest(req)), (req, res) => {
   const icNumber = String(req.params.icNumber || '').trim();
   const cohort = getCohortFromRequest(req);
 
@@ -2903,7 +3200,10 @@ app.get('/api/students/:icNumber', (req, res) => {
   });
 });
 
-app.get('/api/students/:icNumber/photo', (req, res) => {
+app.get('/api/students/:icNumber/photo', requireCohortAccess((req) => {
+  const student = getStudent(String(req.params.icNumber || '').trim());
+  return student ? getCohortById(student.cohort_id) : getCohortFromRequest(req);
+}), (req, res) => {
   const icNumber = String(req.params.icNumber || '').trim();
   const student = getStudent(icNumber);
 
@@ -2926,7 +3226,7 @@ app.get('/api/students/:icNumber/photo', (req, res) => {
   res.sendFile(photoPath);
 });
 
-app.get('/api/students/:icNumber/card/:side', (req, res) => {
+app.get('/api/students/:icNumber/card/:side', requireCohortAccess((req) => getCohortFromRequest(req)), (req, res) => {
   const icNumber = String(req.params.icNumber || '').trim();
   const side = String(req.params.side || '').trim();
   const cohort = getCohortFromRequest(req);
@@ -2966,7 +3266,7 @@ app.get('/api/students/:icNumber/card/:side', (req, res) => {
   res.sendFile(cardPath);
 });
 
-app.get('/api/students/:icNumber/card/:side/thumbnail', async (req, res) => {
+app.get('/api/students/:icNumber/card/:side/thumbnail', requireCohortAccess((req) => getCohortFromRequest(req)), async (req, res) => {
   const icNumber = String(req.params.icNumber || '').trim();
   const side = String(req.params.side || '').trim();
   const cohort = getCohortFromRequest(req);
@@ -3004,14 +3304,14 @@ app.get('/api/students/:icNumber/card/:side/thumbnail', async (req, res) => {
       return;
     }
 
-    res.setHeader('Cache-Control', 'public, max-age=86400');
+    setPrivateNoStore(res);
     res.sendFile(thumbnailPath);
   } catch (error) {
     res.status(500).json({ error: 'Could not create thumbnail.' });
   }
 });
 
-app.get('/api/students/records/cohort', (req, res) => {
+app.get('/api/students/records/cohort', requireCohortAccess((req) => getCohortFromRequest(req)), (req, res) => {
   const cohort = getCohortFromRequest(req);
   if (!cohort) {
     sendCohortNotFound(res);
@@ -3033,7 +3333,7 @@ app.post('/api/students', upload.fields([
   { name: 'photo', maxCount: 1 },
   { name: 'front', maxCount: 1 },
   { name: 'back', maxCount: 1 },
-]), (req, res) => {
+]), requireSameOrigin, requireCohortAccess((req) => getCohortFromRequest(req)), (req, res) => {
   try {
     const cohort = getCohortFromRequest(req);
     if (!cohort) {

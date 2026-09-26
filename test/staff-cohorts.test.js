@@ -17,6 +17,13 @@ test('staff cohort schema and validation are present', () => {
   assert.match(server, /Cohort type cannot be changed after records have been saved/);
 });
 
+test('startup cohort migration never reassigns records with a valid cohort', () => {
+  assert.match(server, /AND \(students\.cohort_id IS NULL OR cohorts\.id IS NULL\)/);
+  assert.match(server, /CASE WHEN COALESCE\(students\.job_title, ''\) != '' THEN 'staff' ELSE 'student' END AS inferred_type/);
+  assert.match(server, /getOrCreateCohort\(group\.program, group\.sesi, \{ type: group\.inferred_type \}\)/);
+  assert.doesNotMatch(server, /cohort_id IS NULL OR cohort_id != \?/);
+});
+
 test('staff generator fields and templates are present', () => {
   assert.match(generator, /id="jobTitleInput"/);
   assert.match(generator, /id="staffNumberInput"/);
@@ -47,11 +54,11 @@ test('cohort deletion requires typed confirmation and cleans associated data', (
   assert.match(home, /elements\.deletePhrase\.value !== 'DELETE'/);
 });
 
-test('grid preview pages use existing Basic Auth without protecting public data APIs', () => {
+test('grid preview uses Basic Auth and personal cohort APIs require cohort access', () => {
   assert.match(server, /app\.use\(\/\^\\\/cohorts\\\/\[\^\/\]\+\\\/grid/);
   assert.match(server, /app\.use\(\['\/grid', '\/grid\.html'\], requireExportsPassword\)/);
-  assert.match(server, /app\.get\('\/api\/students\/records\/cohort'/);
-  assert.match(server, /app\.get\('\/api\/students\/:icNumber\/card\/:side\/thumbnail'/);
+  assert.match(server, /app\.get\('\/api\/students\/records\/cohort', requireCohortAccess/);
+  assert.match(server, /app\.get\('\/api\/students\/:icNumber\/card\/:side\/thumbnail', requireCohortAccess/);
   assert.match(server, /app\.get\('\/api\/exports\/cards\.zip', requireExportsPassword, streamCardsZip\)/);
   assert.match(generatorMarkup, /Grid Preview · Protected/);
 });

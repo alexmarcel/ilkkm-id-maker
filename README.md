@@ -46,6 +46,10 @@ EXPORTS_USERNAME=<admin-username>
 EXPORTS_PASSWORD=<strong-unique-password>
 ```
 
+Both values are mandatory. The server refuses to start when they are missing, weak, or equal to a former documented default. Use a username of at least 4 characters and a unique password of at least 12 characters.
+
+Each cohort also has a shared password configured by an administrator when the cohort is created or edited. It unlocks that cohort's generator, roster, photos, and generated cards for eight hours. Cohorts restored from backups made before cohort passwords were introduced remain locked until an administrator edits them and assigns a password. Cohort-only dataset restores retain the destination cohort password; full backups preserve password hashes but never include plaintext passwords or active sessions.
+
 ## Save Workflow
 
 The home page creates or opens a cohort first. When a valid IC number is typed in a cohort generator, the app checks SQLite for an existing student in that cohort.
@@ -156,7 +160,7 @@ Changing a cohort card background does not regenerate existing saved cards autom
 
 ## Grid Preview
 
-The Grid Preview page displays saved cards for the current Program/Sesi in a visual grid and requires the same HTTP Basic Auth credentials as Admin and Exports. The public Saved Records list, Match Game, and their existing record/thumbnail APIs remain public.
+The Grid Preview and Match Game pages require the same HTTP Basic Auth credentials as Admin and Exports. Cohort records, photos, generated cards, and thumbnails require either the matching cohort session or administrator authentication.
 
 - Desktop uses 5 columns.
 - Mobile uses 3 columns.
