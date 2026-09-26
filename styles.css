@@ -1052,11 +1052,14 @@ h1 {
   gap: 10px;
 }
 
-.grid-preview-link {
+.records-header-action {
+  height: 38px;
   min-height: 38px;
   padding: 0 12px;
   font-size: 13px;
+  line-height: 1;
   text-decoration: none;
+  white-space: nowrap;
 }
 
 .icon-button {
@@ -2389,7 +2392,8 @@ h1 {
     justify-content: flex-end;
   }
 
-  .grid-preview-link {
+  .records-header-action {
+    height: 38px;
     min-height: 38px;
   }
 
