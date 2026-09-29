@@ -78,7 +78,7 @@ const LAYOUT = {
 };
 const STAFF_LAYOUT = {
   front: {
-    staffNumber: { x: 1530, y: 105, maxWidth: 760, fontSize: 79, minFontSize: 46 },
+    staffNumber: { x: 1860, y: 105, maxWidth: 720, fontSize: 64, minFontSize: 40 },
     photo: { x: 653, y: 1020, width: 661, height: 904 },
     name: { x: 984, centerY: 2180, maxWidth: 1520, fontSize: 116, minFontSize: 58, lineHeight: 128, maxLines: 2, color: '#fff' },
     ic: { x: 984, y: 2660, maxWidth: 1320, fontSize: 94, minFontSize: 48, color: '#000' },
@@ -575,6 +575,14 @@ function drawLeftSingleLine(context, text, config) {
   context.fillText(text, config.x, config.y);
 }
 
+function drawRightSingleLine(context, text, config) {
+  const size = fitSingleLine(context, text, config.maxWidth, config.fontSize, config.minFontSize);
+  prepareText(context, size);
+  context.fillStyle = config.color || '#000';
+  context.textAlign = 'right';
+  context.fillText(text, config.x, config.y);
+}
+
 function drawCenteredWrappedName(context, text, config) {
   const wrapped = wrapIntoTwoLines(context, text, config.maxWidth, config.fontSize, config.minFontSize);
   const lineHeight = Math.min(config.lineHeight, Math.round(wrapped.size * 1.12));
@@ -642,7 +650,7 @@ function drawFrontScene(context) {
   }
 
   if (isStaff) {
-    if (data.staffNumber) drawCenteredSingleLine(context, `No. ${data.staffNumber}`, layout.front.staffNumber);
+    if (data.staffNumber) drawRightSingleLine(context, `No. ${data.staffNumber}`, layout.front.staffNumber);
     if (data.ic) drawCenteredSingleLine(context, data.ic, layout.front.ic);
     if (data.jobTitle) drawCenteredWrappedName(context, data.jobTitle, layout.front.jobTitle);
   } else if (data.matrix) {
