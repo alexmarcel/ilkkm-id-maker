@@ -124,7 +124,7 @@ const CARD_LAYOUT = {
 };
 const STAFF_CARD_LAYOUT = {
   front: {
-    staffNumber: { x: 1860, y: 105, maxWidth: 720, fontSize: 64, minFontSize: 40 },
+    staffNumber: { x: 1860, y: 105, maxWidth: 720, fontSize: 51, minFontSize: 32 },
     photo: { x: 653, y: 1020, width: 661, height: 904 },
     name: { x: 984, centerY: 2180, maxWidth: 1520, fontSize: 116, minFontSize: 58, lineHeight: 128, color: '#fff' },
     ic: { x: 984, y: 2660, maxWidth: 1320, fontSize: 94, minFontSize: 48, color: '#000' },
