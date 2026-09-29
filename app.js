@@ -78,7 +78,7 @@ const LAYOUT = {
 };
 const STAFF_LAYOUT = {
   front: {
-    staffNumber: { x: 1530, y: 105, maxWidth: 360, fontSize: 92, minFontSize: 48 },
+    staffNumber: { x: 1530, y: 105, maxWidth: 360, fontSize: 100, minFontSize: 52 },
     photo: { x: 653, y: 1020, width: 661, height: 904 },
     name: { x: 984, centerY: 2180, maxWidth: 1520, fontSize: 116, minFontSize: 58, lineHeight: 128, maxLines: 2, color: '#fff' },
     ic: { x: 984, y: 2660, maxWidth: 1320, fontSize: 94, minFontSize: 48, color: '#000' },
